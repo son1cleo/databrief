@@ -14,14 +14,31 @@ def _derive_title(hook: str) -> str:
 
 
 @celery_app.task(name="generate_report")
-def generate_report_task(report_id: str, industry: str | None = None, question: str | None = None) -> None:
+def generate_report_task(
+    report_id: str,
+    industry: str | None = None,
+    question: str | None = None,
+    formats: list[str] | None = None,
+) -> None:
     """The full pipeline: load the upload -> run stats/insight/story/LLM
-    services -> persist the finished story onto the Report row."""
+    services -> build the requested export files -> persist everything
+    onto the Report row."""
     from src.core.database import SessionLocal
     from src.models.report import Report
     from src.models.upload import Upload
-    from src.services import analysis_service, file_service, insight_service, llm_service, story_service
+    from src.models.user import User
+    from src.services import (
+        analysis_service,
+        file_service,
+        insight_service,
+        llm_service,
+        pdf_service,
+        pptx_service,
+        story_service,
+        word_service,
+    )
 
+    formats = formats or ["pdf"]
     db = SessionLocal()
     try:
         report = db.query(Report).filter(Report.id == report_id).first()
@@ -60,6 +77,16 @@ def generate_report_task(report_id: str, industry: str | None = None, question: 
         report.story_html = story_html
         report.word_count = word_count
         report.findings_count = findings_count
+        db.flush()  # exporters read report.story_html/title, so persist before building files
+
+        user = db.query(User).filter(User.id == report.user_id).first()
+
+        report.pdf_path = pdf_service.build_pdf(report, user)
+        if "word" in formats:
+            report.word_path = word_service.build_word(report)
+        if "pptx" in formats:
+            report.pptx_path = pptx_service.build_pptx(report, user, story_arc)
+
         report.status = "done"
         db.commit()
     except Exception as exc:  # noqa: BLE001 — surface any pipeline failure onto the report row
