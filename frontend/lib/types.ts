@@ -53,4 +53,22 @@ export interface ReportOut {
   is_branded: boolean;
   created_at: string;
   updated_at: string;
+  pdf_ready: boolean;
+  word_ready: boolean;
+  pptx_ready: boolean;
+}
+
+export interface ReportListItem {
+  id: string;
+  title: string | null;
+  hook: string | null;
+  word_count: number | null;
+  findings_count: number | null;
+  status: string;
+  pptx_theme: string | null;
+  is_branded: boolean;
+  created_at: string;
+  pdf_ready: boolean;
+  word_ready: boolean;
+  pptx_ready: boolean;
 }

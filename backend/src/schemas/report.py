@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class ReportConfigRequest(BaseModel):
@@ -27,6 +27,25 @@ class ReportListItem(BaseModel):
     is_branded: bool
     created_at: datetime
 
+    pdf_path: str | None = Field(default=None, exclude=True)
+    word_path: str | None = Field(default=None, exclude=True)
+    pptx_path: str | None = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def pdf_ready(self) -> bool:
+        return self.pdf_path is not None
+
+    @computed_field
+    @property
+    def word_ready(self) -> bool:
+        return self.word_path is not None
+
+    @computed_field
+    @property
+    def pptx_ready(self) -> bool:
+        return self.pptx_path is not None
+
 
 class ReportOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -46,3 +65,22 @@ class ReportOut(BaseModel):
     is_branded: bool
     created_at: datetime
     updated_at: datetime
+
+    pdf_path: str | None = Field(default=None, exclude=True)
+    word_path: str | None = Field(default=None, exclude=True)
+    pptx_path: str | None = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def pdf_ready(self) -> bool:
+        return self.pdf_path is not None
+
+    @computed_field
+    @property
+    def word_ready(self) -> bool:
+        return self.word_path is not None
+
+    @computed_field
+    @property
+    def pptx_ready(self) -> bool:
+        return self.pptx_path is not None
