@@ -40,7 +40,7 @@ def create_report(
     current_user.reports_used += 1
     db.commit()
 
-    generate_report_task.delay(str(report.id))
+    generate_report_task.delay(str(report.id), payload.industry, payload.question)
 
     db.refresh(report)
     return report

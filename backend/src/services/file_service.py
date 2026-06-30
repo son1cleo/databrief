@@ -17,6 +17,9 @@ UNSTRUCTURED_EXTENSIONS = {
 
 ALL_EXTENSIONS = {**STRUCTURED_EXTENSIONS, **SEMI_STRUCTURED_EXTENSIONS, **UNSTRUCTURED_EXTENSIONS}
 
+DATAFRAME_FILE_TYPES = {"csv", "excel", "json", "xml"}
+TEXT_FILE_TYPES = {"txt", "pdf", "docx", "image"}
+
 
 class UnsupportedFileTypeError(Exception):
     pass
@@ -37,6 +40,48 @@ def detect_data_type(file_type: str) -> str:
     return "unstructured"
 
 
+def load_dataframe(path: str, file_type: str) -> pd.DataFrame:
+    if file_type == "csv":
+        return pd.read_csv(path)
+    if file_type == "excel":
+        return pd.read_excel(path)
+    if file_type == "json":
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        return pd.json_normalize(data if isinstance(data, list) else [data])
+    if file_type == "xml":
+        return pd.read_xml(path)
+    raise UnsupportedFileTypeError(f"{file_type} is not a tabular file type")
+
+
+def load_text(path: str, file_type: str) -> str:
+    if file_type == "txt":
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    if file_type == "pdf":
+        import fitz  # PyMuPDF
+
+        text = ""
+        with fitz.open(path) as doc:
+            for page in doc:
+                text += page.get_text()
+        return text
+    if file_type == "docx":
+        import docx
+
+        document = docx.Document(path)
+        return "\n".join(p.text for p in document.paragraphs)
+    if file_type == "image":
+        try:
+            import pytesseract
+            from PIL import Image
+
+            return pytesseract.image_to_string(Image.open(path))
+        except Exception:
+            return ""
+    raise UnsupportedFileTypeError(f"{file_type} is not a text-extractable file type")
+
+
 def _dataframe_preview(df: pd.DataFrame) -> dict[str, Any]:
     head = df.head(10).fillna("").astype(str)
     return {
@@ -47,82 +92,12 @@ def _dataframe_preview(df: pd.DataFrame) -> dict[str, Any]:
     }
 
 
-def parse_csv(path: str) -> dict[str, Any]:
-    df = pd.read_csv(path)
-    return _dataframe_preview(df)
-
-
-def parse_excel(path: str) -> dict[str, Any]:
-    df = pd.read_excel(path)
-    return _dataframe_preview(df)
-
-
-def parse_json_file(path: str) -> dict[str, Any]:
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
-    df = pd.json_normalize(data if isinstance(data, list) else [data])
-    return _dataframe_preview(df)
-
-
-def parse_xml(path: str) -> dict[str, Any]:
-    df = pd.read_xml(path)
-    return _dataframe_preview(df)
-
-
-def parse_txt(path: str) -> dict[str, Any]:
-    with open(path, encoding="utf-8", errors="replace") as f:
-        text = f.read()
-    return {"text_preview": text[:500]}
-
-
-def parse_pdf(path: str) -> dict[str, Any]:
-    import fitz  # PyMuPDF
-
-    text = ""
-    with fitz.open(path) as doc:
-        for page in doc:
-            text += page.get_text()
-            if len(text) >= 500:
-                break
-    return {"text_preview": text[:500]}
-
-
-def parse_docx(path: str) -> dict[str, Any]:
-    import docx
-
-    document = docx.Document(path)
-    text = "\n".join(p.text for p in document.paragraphs)
-    return {"text_preview": text[:500]}
-
-
-def parse_image(path: str) -> dict[str, Any]:
-    try:
-        import pytesseract
-        from PIL import Image
-
-        text = pytesseract.image_to_string(Image.open(path))
-    except Exception:
-        text = ""
-    return {"text_preview": text[:500]}
-
-
-PARSERS = {
-    "csv": parse_csv,
-    "excel": parse_excel,
-    "json": parse_json_file,
-    "xml": parse_xml,
-    "txt": parse_txt,
-    "pdf": parse_pdf,
-    "docx": parse_docx,
-    "image": parse_image,
-}
-
-
 def parse_preview(path: str, file_type: str) -> dict[str, Any]:
-    parser = PARSERS.get(file_type)
-    if parser is None:
-        raise UnsupportedFileTypeError(f"No parser for file type: {file_type}")
-    return parser(path)
+    if file_type in DATAFRAME_FILE_TYPES:
+        return _dataframe_preview(load_dataframe(path, file_type))
+    if file_type in TEXT_FILE_TYPES:
+        return {"text_preview": load_text(path, file_type)[:500]}
+    raise UnsupportedFileTypeError(f"No parser for file type: {file_type}")
 
 
 def save_upload(file_bytes: bytes, filename: str, user_id: str, upload_dir: str) -> tuple[str, int]:
