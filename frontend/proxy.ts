@@ -7,6 +7,12 @@ export default auth((req) => {
     loginUrl.searchParams.set("callbackUrl", req.nextUrl.pathname);
     return NextResponse.redirect(loginUrl);
   }
+
+  // Forwarded so (app)/layout.tsx can branch on the current route without
+  // a client component (e.g. to skip the dashboard chrome on /onboarding).
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-pathname", req.nextUrl.pathname);
+  return NextResponse.next({ request: { headers: requestHeaders } });
 });
 
 export const config = {
