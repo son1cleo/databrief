@@ -11,7 +11,7 @@ class Upload(Base):
     __tablename__ = "uploads"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
     filename = Column(String, nullable=False)
     file_type = Column(String)  # csv|excel|xml|pdf|docx|image|json

@@ -21,6 +21,7 @@ class UploadOut(BaseModel):
 
 
 class UploadPreview(BaseModel):
+    upload_id: uuid.UUID
     columns: list[str] = []
     rows: list[dict] = []
     text_preview: str | None = None
