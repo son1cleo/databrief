@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import Link from "next/link";
+import { MobileNav } from "./MobileNav";
 
 interface NavbarProps {
   user: {
@@ -23,7 +24,8 @@ export function Navbar({ user }: NavbarProps) {
   const initials = (user.name ?? user.email ?? "?").slice(0, 1).toUpperCase();
 
   return (
-    <header className="flex h-16 items-center justify-end border-b border-border px-6">
+    <header className="flex h-16 items-center justify-between border-b border-border px-4 md:px-6">
+      <MobileNav />
       <DropdownMenu>
         <DropdownMenuTrigger className="outline-none">
           <Avatar className="size-8">

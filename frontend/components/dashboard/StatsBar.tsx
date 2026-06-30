@@ -1,4 +1,5 @@
 import type { UserOut } from "@/lib/types";
+import { CountUp } from "./CountUp";
 
 interface StatsBarProps {
   user: UserOut;
@@ -13,14 +14,13 @@ const PLAN_LABELS: Record<string, string> = {
 };
 
 export function StatsBar({ user, totalReports }: StatsBarProps) {
-  const remaining =
-    user.plan === "business" ? "Unlimited" : Math.max(user.reports_limit - user.reports_used, 0);
+  const remaining = user.plan === "business" ? null : Math.max(user.reports_limit - user.reports_used, 0);
 
-  const stats = [
+  const stats: { label: string; value: React.ReactNode }[] = [
     { label: "Plan", value: PLAN_LABELS[user.plan] ?? user.plan },
-    { label: "Reports This Period", value: user.reports_used },
-    { label: "Reports Remaining", value: remaining },
-    { label: "Total Reports", value: totalReports },
+    { label: "Reports This Period", value: <CountUp value={user.reports_used} /> },
+    { label: "Reports Remaining", value: remaining === null ? "Unlimited" : <CountUp value={remaining} /> },
+    { label: "Total Reports", value: <CountUp value={totalReports} /> },
   ];
 
   return (

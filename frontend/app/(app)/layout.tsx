@@ -5,6 +5,7 @@ import { getApiToken } from "@/lib/apiToken";
 import { apiFetch } from "@/lib/api";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Navbar } from "@/components/layout/Navbar";
+import { PageTransition } from "@/components/layout/PageTransition";
 import type { UserOut } from "@/lib/types";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -20,7 +21,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (user.onboarded && isOnboarding) redirect("/dashboard");
 
   if (isOnboarding) {
-    return <main className="flex-1">{children}</main>;
+    return (
+      <main className="flex-1">
+        <PageTransition key={pathname}>{children}</PageTransition>
+      </main>
+    );
   }
 
   return (
@@ -28,7 +33,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Sidebar />
       <div className="flex flex-1 flex-col">
         <Navbar user={session.user} />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-6">
+          <PageTransition key={pathname}>{children}</PageTransition>
+        </main>
       </div>
     </div>
   );

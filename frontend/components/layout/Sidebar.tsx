@@ -1,13 +1,5 @@
 import Link from "next/link";
-import { LayoutDashboard, Upload, FileText, Settings, Palette } from "lucide-react";
-
-const links = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/upload", label: "New Report", icon: Upload },
-  { href: "/reports", label: "Reports", icon: FileText },
-  { href: "/brand-kit", label: "Brand Kit", icon: Palette },
-  { href: "/settings", label: "Settings", icon: Settings },
-];
+import { NAV_LINKS } from "./nav-links";
 
 export function Sidebar() {
   return (
@@ -16,7 +8,7 @@ export function Sidebar() {
         DataBrief
       </Link>
       <nav className="flex flex-col gap-1">
-        {links.map(({ href, label, icon: Icon }) => (
+        {NAV_LINKS.map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
             href={href}
