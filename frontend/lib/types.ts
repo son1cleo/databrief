@@ -72,3 +72,11 @@ export interface ReportListItem {
   word_ready: boolean;
   pptx_ready: boolean;
 }
+
+export interface UsageResponse {
+  plan: string;
+  reports_used: number;
+  reports_limit: number;
+  reports_remaining: number;
+  overage_cents: number | null;
+}
