@@ -1,4 +1,10 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// Browser requests must hit a publicly reachable URL; server-side requests
+// (route handlers, server components) can use the internal Docker network
+// hostname instead, configured separately so the two never collide.
+const API_URL =
+  (typeof window === "undefined" ? process.env.API_INTERNAL_URL : undefined) ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://localhost:8000";
 
 interface ApiFetchOptions extends RequestInit {
   token?: string | null;
