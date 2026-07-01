@@ -28,9 +28,23 @@ export function UploadWizard({ defaultIndustry, hasBrandKit }: UploadWizardProps
     setUploadLoading(true);
     setUploadError(null);
     try {
+      // Fetch a short-lived API token server-side, then upload directly to
+      // the Railway backend to bypass Vercel's 4.5 MB serverless body limit.
+      const tokenRes = await fetch("/api/auth/token");
+      if (!tokenRes.ok) {
+        setUploadError("Authentication error. Please sign in again.");
+        return;
+      }
+      const { token } = await tokenRes.json();
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const res = await fetch(`${apiUrl}/api/uploads`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setUploadError(body?.detail ?? "Could not process that file. Try a different one.");
