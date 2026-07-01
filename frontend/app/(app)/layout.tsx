@@ -33,7 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Sidebar />
       <div className="flex flex-1 flex-col">
         <Navbar user={session.user} plan={user.plan} />
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-4 md:p-6">
           <PageTransition key={pathname}>{children}</PageTransition>
         </main>
       </div>

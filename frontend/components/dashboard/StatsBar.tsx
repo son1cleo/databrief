@@ -27,16 +27,16 @@ export function StatsBar({ user, totalReports }: StatsBarProps) {
   ];
 
   return (
-    <div className="flex flex-col gap-6 overflow-x-auto rounded-lg border border-border bg-surface px-8 py-5 sm:flex-row sm:items-center">
+    <div className="grid grid-cols-2 gap-px rounded-lg border border-border bg-border sm:flex sm:gap-0 sm:bg-surface overflow-hidden">
       {stats.map((stat, i) => (
-        <div key={stat.label} className="flex items-center gap-6 shrink-0">
-          <div>
-            <p className="mb-1 font-mono text-[10px] tracking-widest text-muted-foreground">
+        <div key={stat.label} className="flex items-center gap-4 bg-surface px-5 py-4 sm:flex-1 sm:gap-6 sm:px-8 sm:py-5">
+          <div className="min-w-0">
+            <p className="mb-1 font-mono text-[10px] tracking-widest text-muted-foreground truncate">
               {stat.label}
             </p>
-            <p className="font-display text-3xl font-bold text-foreground">{stat.value}</p>
+            <p className="font-display text-2xl font-bold text-foreground sm:text-3xl">{stat.value}</p>
           </div>
-          {i < stats.length - 1 && <div className="hidden h-10 w-px bg-border sm:block" />}
+          {i < stats.length - 1 && <div className="hidden h-10 w-px bg-border sm:block ml-auto shrink-0" />}
         </div>
       ))}
     </div>

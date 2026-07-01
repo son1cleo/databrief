@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { getApiToken } from "@/lib/apiToken";
 import { apiFetch } from "@/lib/api";
 import { listReports } from "@/app/(app)/reports/actions";
@@ -16,16 +15,15 @@ export default async function DashboardPage() {
   ]);
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">Dashboard</h1>
-        <Button
-          render={<Link href="/upload" />}
-          nativeButton={false}
-          className="bg-brand font-mono hover:bg-brand-hover"
+    <div className="space-y-6 md:space-y-8">
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="font-display text-xl font-bold tracking-tight text-foreground md:text-2xl">Dashboard</h1>
+        <Link
+          href="/upload"
+          className="shrink-0 rounded bg-brand px-3 py-1.5 font-mono text-xs text-white hover:bg-brand-hover"
         >
           New Report →
-        </Button>
+        </Link>
       </div>
 
       <StatsBar user={user} totalReports={reports.length} />
