@@ -9,10 +9,10 @@ interface UploadStepProps {
 export function UploadStep({ onFileSelected, onContinue }: UploadStepProps) {
   return (
     <div>
-      <h2 className="mb-2 text-center text-2xl font-semibold tracking-tight">
+      <h2 className="mb-2 text-center font-display text-2xl font-bold tracking-tight text-foreground">
         Upload your first file
       </h2>
-      <p className="mb-8 text-center text-sm text-text-muted">
+      <p className="mb-8 text-center font-mono text-xs text-muted-foreground">
         Optional — you can always do this later from your dashboard.
       </p>
 
@@ -21,11 +21,11 @@ export function UploadStep({ onFileSelected, onContinue }: UploadStepProps) {
       </div>
 
       <div className="flex justify-center gap-3">
-        <Button variant="outline" size="lg" onClick={onContinue}>
+        <Button variant="outline" size="lg" onClick={onContinue} className="font-mono">
           Skip for now
         </Button>
-        <Button size="lg" onClick={onContinue} className="bg-brand hover:bg-brand-hover">
-          Continue
+        <Button size="lg" onClick={onContinue} className="bg-brand font-mono hover:bg-brand-hover">
+          Continue →
         </Button>
       </div>
     </div>

@@ -1,4 +1,3 @@
-import { Progress } from "@/components/ui/progress";
 import Link from "next/link";
 
 interface UsageProgressProps {
@@ -14,16 +13,18 @@ export function UsageProgress({ used, limit, plan }: UsageProgressProps) {
   const atLimit = used >= limit;
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-5">
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-sm font-medium">Reports used this period</p>
-        <p className="text-sm text-text-muted">
-          {used} / {limit}
-        </p>
+    <div className="rounded-lg border border-border bg-surface p-5">
+      <div className="mb-2 flex items-center justify-between font-mono text-xs">
+        <span className="text-muted-foreground">MONTHLY USAGE</span>
+        <span className="text-data-ink">
+          {used} / {limit} reports
+        </span>
       </div>
-      <Progress value={pct} className="h-2" />
+      <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+        <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${pct}%` }} />
+      </div>
       {atLimit && (
-        <p className="mt-3 text-xs text-warning">
+        <p className="mt-3 font-mono text-xs text-warning">
           You&apos;ve used all your reports.{" "}
           <Link href="/settings/billing" className="underline">
             Upgrade your plan

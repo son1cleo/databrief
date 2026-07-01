@@ -58,11 +58,11 @@ export function DebtSlider() {
   const highlightedBand = getHighlightedBand(value);
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-6 sm:p-7 text-left">
+    <div className="rounded-lg border border-border bg-surface p-6 sm:p-7 text-left">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div>
-          <p className="font-mono text-[10px] tracking-widest text-text-muted uppercase mb-1">
+          <p className="font-mono text-[10px] tracking-widest text-data-ink uppercase mb-1">
             Leverage Explorer
           </p>
           <p className="text-sm font-semibold">Drag the slider — watch the story respond</p>
@@ -73,10 +73,10 @@ export function DebtSlider() {
               key={key}
               onClick={() => setTab(key)}
               className={cn(
-                "rounded-md border px-3.5 py-1.5 text-xs font-medium whitespace-nowrap transition-colors",
+                "rounded border px-3.5 py-1.5 font-mono text-xs whitespace-nowrap transition-colors",
                 tab === key
-                  ? "border-brand bg-brand/15 text-blue-400"
-                  : "border-border bg-background text-text-muted hover:text-foreground hover:border-text-subtle"
+                  ? "border-brand bg-brand/15 text-data-ink"
+                  : "border-border bg-background text-muted-foreground hover:text-foreground hover:border-foreground/30"
               )}
             >
               {label}
@@ -88,28 +88,28 @@ export function DebtSlider() {
       <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr] items-start">
         {/* Left: chart + slider + stat chips */}
         <div>
-          <div className="h-[260px] rounded-lg border border-border bg-[#0d0d0d] p-2">
+          <div className="h-[260px] rounded-lg border border-border bg-background p-2">
             <ResponsiveContainer width="100%" height="100%">
               {tab === "band" ? (
                 <BarChart data={bandChartData(highlightedBand)} layout="vertical" margin={{ left: 8, right: 16 }}>
-                  <CartesianGrid stroke="rgba(31,31,31,0.8)" horizontal={false} />
+                  <CartesianGrid stroke="rgba(30,39,57,0.8)" horizontal={false} />
                   <XAxis
                     type="number"
-                    tick={{ fill: "#6b7280", fontSize: 9 }}
+                    tick={{ fill: "#8b949e", fontSize: 9 }}
                     tickFormatter={(v) => `${v}%`}
-                    stroke="#1f1f1f"
+                    stroke="#1e2739"
                   />
                   <YAxis
                     type="category"
                     dataKey="label"
-                    tick={{ fill: "#9ca3af", fontSize: 10 }}
+                    tick={{ fill: "#8b949e", fontSize: 10 }}
                     width={130}
-                    stroke="#1f1f1f"
+                    stroke="#1e2739"
                   />
                   <Tooltip
                     cursor={{ fill: "rgba(255,255,255,0.03)" }}
-                    contentStyle={{ background: "#0d0d0d", border: "1px solid #1f1f1f", fontSize: 12 }}
-                    labelStyle={{ color: "#fff" }}
+                    contentStyle={{ background: "#0a0e1a", border: "1px solid #1e2739", fontSize: 12 }}
+                    labelStyle={{ color: "#e6edf3" }}
                     formatter={(v) => [`${v}%`, "Median ROA"]}
                   />
                   <Bar dataKey="value" radius={4}>
@@ -124,26 +124,26 @@ export function DebtSlider() {
                 </BarChart>
               ) : (
                 <ComposedChart margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-                  <CartesianGrid stroke="rgba(31,31,31,0.8)" />
+                  <CartesianGrid stroke="rgba(30,39,57,0.8)" />
                   <XAxis
                     type="number"
                     dataKey="x"
                     domain={[0, 10]}
-                    tick={{ fill: "#6b7280", fontSize: 9 }}
-                    stroke="#1f1f1f"
-                    label={{ value: "D/E Ratio", position: "insideBottom", offset: -2, fill: "#6b7280", fontSize: 10 }}
+                    tick={{ fill: "#8b949e", fontSize: 9 }}
+                    stroke="#1e2739"
+                    label={{ value: "D/E Ratio", position: "insideBottom", offset: -2, fill: "#8b949e", fontSize: 10 }}
                   />
                   <YAxis
                     type="number"
                     domain={[tabCfg.yMin, tabCfg.yMax]}
-                    tick={{ fill: "#6b7280", fontSize: 9 }}
+                    tick={{ fill: "#8b949e", fontSize: 9 }}
                     tickFormatter={(v) => `${v}%`}
-                    stroke="#1f1f1f"
+                    stroke="#1e2739"
                   />
                   <Tooltip
-                    cursor={{ stroke: "#374151" }}
-                    contentStyle={{ background: "#0d0d0d", border: "1px solid #1f1f1f", fontSize: 12 }}
-                    labelStyle={{ color: "#fff" }}
+                    cursor={{ stroke: "#475569" }}
+                    contentStyle={{ background: "#0a0e1a", border: "1px solid #1e2739", fontSize: 12 }}
+                    labelStyle={{ color: "#e6edf3" }}
                     formatter={(v, name) =>
                       name === "y" ? [`${Number(v).toFixed(1)}%`, tabCfg.shortLabel] : [v, name]
                     }
@@ -222,7 +222,7 @@ export function DebtSlider() {
         </div>
 
         {/* Right: analysis panel */}
-        <div className="rounded-lg border border-border bg-[#0d0d0d] p-5">
+        <div className="rounded-lg border border-border bg-background p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <span

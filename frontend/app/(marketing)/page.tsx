@@ -1,7 +1,7 @@
 import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { HeroSection } from "@/components/marketing/HeroSection";
-import { StatsBar } from "@/components/marketing/StatsBar";
 import { FindingSection } from "@/components/marketing/FindingSection";
+import { DebtSlider } from "@/components/marketing/DebtSlider";
 import { FeaturesSection } from "@/components/marketing/FeaturesSection";
 import { PricingSection } from "@/components/marketing/PricingSection";
 import { CTASection } from "@/components/marketing/CTASection";
@@ -13,8 +13,16 @@ export default function MarketingHome() {
       <MarketingNav />
       <main className="flex-1">
         <HeroSection />
-        <StatsBar />
         <FindingSection />
+        <section className="border-t border-border py-24">
+          <div className="mx-auto max-w-7xl px-6">
+            <p className="mb-3 font-mono text-xs text-data-ink">EXPLORE THE DATA</p>
+            <h2 className="mb-10 font-display text-4xl font-bold tracking-tight text-foreground">
+              Drag the slider. Watch the story respond.
+            </h2>
+            <DebtSlider />
+          </div>
+        </section>
         <FeaturesSection />
         <PricingSection />
         <CTASection />

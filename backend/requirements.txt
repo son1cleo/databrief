@@ -18,11 +18,13 @@ PyMuPDF==1.25.1
 python-docx==1.1.2
 python-pptx==1.0.2
 Pillow==11.0.0
+matplotlib==3.10.3
 pytesseract==0.3.13
 weasyprint==63.1
 beautifulsoup4==4.12.3
-anthropic==0.42.0
+groq==0.13.1
 stripe==11.4.1
+boto3==1.35.99
 httpx==0.28.1
 python-dotenv==1.0.1
 slowapi==0.1.9

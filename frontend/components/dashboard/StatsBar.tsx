@@ -7,28 +7,36 @@ interface StatsBarProps {
 }
 
 const PLAN_LABELS: Record<string, string> = {
-  free: "Free",
-  starter: "Starter",
-  growth: "Growth",
-  business: "Business",
+  free: "free",
+  starter: "starter",
+  growth: "growth",
+  business: "business",
 };
 
 export function StatsBar({ user, totalReports }: StatsBarProps) {
   const remaining = user.plan === "business" ? null : Math.max(user.reports_limit - user.reports_used, 0);
 
-  const stats: { label: string; value: React.ReactNode }[] = [
-    { label: "Plan", value: PLAN_LABELS[user.plan] ?? user.plan },
-    { label: "Reports This Period", value: <CountUp value={user.reports_used} /> },
-    { label: "Reports Remaining", value: remaining === null ? "Unlimited" : <CountUp value={remaining} /> },
-    { label: "Total Reports", value: <CountUp value={totalReports} /> },
+  const stats = [
+    { label: "PLAN_STATUS", value: PLAN_LABELS[user.plan] ?? user.plan },
+    { label: "REPORTS_USED", value: <CountUp value={user.reports_used} /> },
+    {
+      label: "REPORTS_REMAINING",
+      value: remaining === null ? "unlimited" : <CountUp value={remaining} />,
+    },
+    { label: "TOTAL_REPORTS", value: <CountUp value={totalReports} /> },
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-      {stats.map((stat) => (
-        <div key={stat.label} className="rounded-xl border border-border bg-surface p-4">
-          <p className="mb-1 text-[11px] uppercase tracking-wide text-text-muted">{stat.label}</p>
-          <p className="text-2xl font-semibold tracking-tight">{stat.value}</p>
+    <div className="flex flex-col gap-6 overflow-x-auto rounded-lg border border-border bg-surface px-8 py-5 sm:flex-row sm:items-center">
+      {stats.map((stat, i) => (
+        <div key={stat.label} className="flex items-center gap-6 shrink-0">
+          <div>
+            <p className="mb-1 font-mono text-[10px] tracking-widest text-muted-foreground">
+              {stat.label}
+            </p>
+            <p className="font-display text-3xl font-bold text-foreground">{stat.value}</p>
+          </div>
+          {i < stats.length - 1 && <div className="hidden h-10 w-px bg-border sm:block" />}
         </div>
       ))}
     </div>

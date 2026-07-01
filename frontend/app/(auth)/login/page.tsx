@@ -14,15 +14,17 @@ export default async function LoginPage({
 
   return (
     <main className="flex flex-1 items-center justify-center px-4">
-      <div className="w-full max-w-sm rounded-xl border border-border bg-surface p-8 glow-accent">
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
-          <p className="mt-2 text-sm text-text-muted">
+      <div className="glow-brand w-full max-w-sm rounded-lg border border-border bg-surface p-10">
+        <div className="mb-8 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
+            Welcome back
+          </h1>
+          <p className="mt-2 font-mono text-xs text-muted-foreground">
             Your data knows something you don&apos;t. Find out what.
           </p>
         </div>
         <OAuthButtons callbackUrl={callbackUrl ?? "/dashboard"} />
-        <p className="mt-6 text-center text-xs text-text-subtle">
+        <p className="mt-6 text-center font-mono text-[10px] text-muted-foreground">
           By continuing, you agree to DataBrief&apos;s Terms of Service and Privacy Policy.
         </p>
       </div>

@@ -29,6 +29,7 @@ def generate_report_task(
     from src.models.user import User
     from src.services import (
         analysis_service,
+        chart_service,
         file_service,
         insight_service,
         llm_service,
@@ -54,8 +55,48 @@ def generate_report_task(
 
         if upload.data_type in ("structured", "semi_structured"):
             df = file_service.load_dataframe(upload.storage_path, upload.file_type)
-            findings = analysis_service.analyze(df)
-            top_findings = insight_service.rank_findings(findings)
+
+            column_meta: dict = {}
+            if question:
+                sample_values = {col: df[col].dropna().head(5).tolist() for col in df.columns}
+                column_meta = llm_service.identify_relevant_columns(
+                    question=question,
+                    columns=df.columns.tolist(),
+                    sample_values=sample_values,
+                )
+
+            relevant_cols = column_meta.get("relevant_cols") or []
+            question_type = column_meta.get("question_type") or None
+            independent_var = column_meta.get("independent_var")
+            dependent_var = column_meta.get("dependent_var")
+
+            # Auto-compute change columns for pre/post pairs so they're first-class columns
+            change_cols_added = []
+            for col in list(df.columns):
+                if any(p in col.lower() for p in ["post_", "_post", "after_"]):
+                    pre_col = analysis_service._find_pre_column(df, col)
+                    if pre_col:
+                        change_col = f"change_{col}"
+                        df[change_col] = df[col] - df[pre_col]
+                        change_cols_added.append(change_col)
+            if change_cols_added and question:
+                improve_words = {"better", "worse", "improve", "change", "help", "hurt", "impact", "affect"}
+                if any(w in question.lower() for w in improve_words):
+                    relevant_cols = relevant_cols + change_cols_added
+
+            findings = analysis_service.analyze(
+                df,
+                question=question,
+                relevant_cols=relevant_cols,
+                question_type=question_type,
+                independent_var=independent_var,
+                dependent_var=dependent_var,
+            )
+            top_findings = insight_service.rank_findings(findings, relevant_cols=relevant_cols)
+            for finding in top_findings:
+                chart_b64 = chart_service.chart_for_finding(finding.to_dict(), df)
+                if chart_b64:
+                    finding.extra["chart_b64"] = chart_b64
             story_arc = story_service.build_story_arc(
                 top_findings,
                 row_count=len(df),

@@ -40,7 +40,7 @@ def detect_data_type(file_type: str) -> str:
     return "unstructured"
 
 
-def load_dataframe(path: str, file_type: str) -> pd.DataFrame:
+def _read_dataframe(path: str, file_type: str) -> pd.DataFrame:
     if file_type == "csv":
         return pd.read_csv(path)
     if file_type == "excel":
@@ -54,13 +54,27 @@ def load_dataframe(path: str, file_type: str) -> pd.DataFrame:
     raise UnsupportedFileTypeError(f"{file_type} is not a tabular file type")
 
 
-def load_text(path: str, file_type: str) -> str:
+def load_dataframe(storage_path: str, file_type: str) -> pd.DataFrame:
+    import os
+    from src.services import storage_service
+    ext = {"csv": ".csv", "excel": ".xlsx", "json": ".json", "xml": ".xml"}.get(file_type, "")
+    tmp_path = storage_service.download_to_temp(storage_path, suffix=ext)
+    try:
+        return _read_dataframe(tmp_path, file_type)
+    finally:
+        if tmp_path != storage_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
+def _read_text(path: str, file_type: str) -> str:
     if file_type == "txt":
         with open(path, encoding="utf-8", errors="replace") as f:
             return f.read()
     if file_type == "pdf":
         import fitz  # PyMuPDF
-
         text = ""
         with fitz.open(path) as doc:
             for page in doc:
@@ -68,18 +82,31 @@ def load_text(path: str, file_type: str) -> str:
         return text
     if file_type == "docx":
         import docx
-
         document = docx.Document(path)
         return "\n".join(p.text for p in document.paragraphs)
     if file_type == "image":
         try:
             import pytesseract
             from PIL import Image
-
             return pytesseract.image_to_string(Image.open(path))
         except Exception:
             return ""
     raise UnsupportedFileTypeError(f"{file_type} is not a text-extractable file type")
+
+
+def load_text(storage_path: str, file_type: str) -> str:
+    import os
+    from src.services import storage_service
+    ext = {"pdf": ".pdf", "docx": ".docx", "txt": ".txt", "image": ".png"}.get(file_type, "")
+    tmp_path = storage_service.download_to_temp(storage_path, suffix=ext)
+    try:
+        return _read_text(tmp_path, file_type)
+    finally:
+        if tmp_path != storage_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 
 def _dataframe_preview(df: pd.DataFrame) -> dict[str, Any]:
@@ -101,12 +128,16 @@ def parse_preview(path: str, file_type: str) -> dict[str, Any]:
 
 
 def save_upload(file_bytes: bytes, filename: str, user_id: str, upload_dir: str) -> tuple[str, int]:
+    import uuid
+    from src.services import storage_service
     ext = Path(filename).suffix.lower()
+    if storage_service._r2_configured():
+        object_key = f"uploads/{user_id}/{uuid.uuid4()}{ext}"
+        storage_service.upload_bytes(file_bytes, object_key)
+        return object_key, len(file_bytes)
+    # Local dev fallback
     user_dir = Path(upload_dir) / user_id
     user_dir.mkdir(parents=True, exist_ok=True)
-
-    import uuid
-
     stored_name = f"{uuid.uuid4()}{ext}"
     storage_path = user_dir / stored_name
     storage_path.write_bytes(file_bytes)

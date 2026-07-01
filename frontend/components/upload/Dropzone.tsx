@@ -20,6 +20,7 @@ const ACCEPT = {
 };
 
 const MAX_SIZE_BYTES = 50 * 1024 * 1024;
+const FILE_TYPES = ["csv", "xlsx", "xml", "pdf", "docx", "json", "png", "jpg"];
 
 interface DropzoneProps {
   onFileSelected: (file: File | null) => void;
@@ -60,15 +61,17 @@ export function Dropzone({ onFileSelected }: DropzoneProps) {
 
   if (file) {
     return (
-      <div className="flex items-center justify-between rounded-xl border border-border bg-surface p-5">
+      <div className="flex items-center justify-between rounded-lg border border-border bg-surface p-5">
         <div className="flex items-center gap-3">
-          <FileText className="size-5 text-brand shrink-0" />
+          <FileText className="size-5 shrink-0 text-brand" />
           <div>
-            <p className="text-sm font-medium">{file.name}</p>
-            <p className="text-xs text-text-muted">{(file.size / 1024).toFixed(0)} KB</p>
+            <p className="font-mono text-sm text-foreground">{file.name}</p>
+            <p className="font-mono text-xs text-muted-foreground">
+              {(file.size / 1024).toFixed(0)} KB
+            </p>
           </div>
         </div>
-        <button onClick={clear} className="text-text-muted hover:text-foreground">
+        <button onClick={clear} className="text-muted-foreground hover:text-foreground">
           <X className="size-4" />
         </button>
       </div>
@@ -80,16 +83,30 @@ export function Dropzone({ onFileSelected }: DropzoneProps) {
       <div
         {...getRootProps()}
         className={cn(
-          "flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-10 text-center transition-colors cursor-pointer",
-          isDragActive ? "border-brand bg-brand/5 glow-accent" : "border-border bg-surface hover:border-text-subtle"
+          "flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-10 text-center transition-colors",
+          isDragActive
+            ? "glow-brand border-brand bg-brand/5"
+            : "border-border bg-surface hover:border-foreground/30"
         )}
       >
         <input {...getInputProps()} />
-        <UploadCloud className={cn("size-8", isDragActive ? "text-brand" : "text-text-muted")} />
-        <p className="text-sm font-medium">Drag & drop a file, or click to browse</p>
-        <p className="text-xs text-text-muted">CSV, Excel, XML, PDF, DOCX, TXT, JSON, PNG, JPG — up to 50MB</p>
+        <UploadCloud className={cn("size-8", isDragActive ? "text-brand" : "text-muted-foreground")} />
+        <p className="font-mono text-sm text-muted-foreground">
+          drag_file_here.{"{csv,xlsx,pdf}"}
+        </p>
+        <p className="font-mono text-xs text-muted-foreground">or click to browse</p>
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-1.5">
+          {FILE_TYPES.map((type) => (
+            <span
+              key={type}
+              className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+            >
+              {type}
+            </span>
+          ))}
+        </div>
       </div>
-      {error && <p className="mt-2 text-xs text-error">{error}</p>}
+      {error && <p className="mt-2 font-mono text-xs text-error">{error}</p>}
     </div>
   );
 }

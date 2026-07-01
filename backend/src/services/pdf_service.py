@@ -48,6 +48,16 @@ def build_pdf(report: Report, user: User) -> str:
     </html>
     """
 
+    from src.services import storage_service
+    import tempfile, os
+    if storage_service._r2_configured():
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        tmp.close()
+        HTML(string=html_doc).write_pdf(tmp.name)
+        object_key = f"reports/{report.id}/report.pdf"
+        storage_service.upload_file(tmp.name, object_key, content_type="application/pdf")
+        os.remove(tmp.name)
+        return object_key
     out_path = _output_dir(str(report.id)) / "report.pdf"
     HTML(string=html_doc).write_pdf(str(out_path))
     return str(out_path)

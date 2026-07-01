@@ -1,7 +1,6 @@
 "use client";
 
 import { signIn } from "next-auth/react";
-import { Button } from "@/components/ui/button";
 
 interface OAuthButtonsProps {
   callbackUrl?: string;
@@ -10,24 +9,20 @@ interface OAuthButtonsProps {
 export function OAuthButtons({ callbackUrl = "/dashboard" }: OAuthButtonsProps) {
   return (
     <div className="flex flex-col gap-3">
-      <Button
-        variant="outline"
-        size="lg"
-        className="border-border bg-surface hover:bg-surface-2 hover:border-brand"
+      <button
+        className="flex w-full items-center justify-center gap-3 rounded border border-border bg-surface-2 px-4 py-2.5 font-mono text-sm text-foreground transition-colors hover:border-foreground/20 hover:bg-surface"
         onClick={() => signIn("google", { callbackUrl })}
       >
         <GoogleIcon className="size-4" />
         Continue with Google
-      </Button>
-      <Button
-        variant="outline"
-        size="lg"
-        className="border-border bg-surface hover:bg-surface-2 hover:border-brand"
+      </button>
+      <button
+        className="flex w-full items-center justify-center gap-3 rounded border border-border bg-surface-2 px-4 py-2.5 font-mono text-sm text-foreground transition-colors hover:border-foreground/20 hover:bg-surface"
         onClick={() => signIn("github", { callbackUrl })}
       >
         <GitHubIcon className="size-4" />
         Continue with GitHub
-      </Button>
+      </button>
     </div>
   );
 }

@@ -12,7 +12,18 @@ export async function uploadFile(formData: FormData): Promise<ActionResult<Uploa
   if (!token) redirect("/login");
 
   try {
-    const data = await apiFetch<UploadPreview>("/api/uploads", { method: "POST", token, body: formData });
+    // Next.js deserializes the incoming FormData when the server action is called,
+    // which can leave File streams in a consumed state. Re-materialise the file
+    // bytes into a fresh FormData so Node's fetch has a clean multipart body.
+    const incoming = formData.get("file");
+    if (!incoming || typeof incoming === "string") {
+      return { success: false, status: 400, message: "No file provided" };
+    }
+    const bytes = await incoming.arrayBuffer();
+    const fresh = new FormData();
+    fresh.append("file", new Blob([bytes], { type: incoming.type }), incoming.name);
+
+    const data = await apiFetch<UploadPreview>("/api/uploads", { method: "POST", token, body: fresh });
     return { success: true, data };
   } catch (err) {
     if (err instanceof ApiError) return { success: false, status: err.status, message: err.message };

@@ -178,6 +178,16 @@ def build_pptx(report: Report, user: User, story_arc: dict[str, Any]) -> str:
     if findings:
         builder.appendix_slide(findings)
 
+    from src.services import storage_service
+    import tempfile, os
+    if storage_service._r2_configured():
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pptx")
+        tmp.close()
+        prs.save(tmp.name)
+        object_key = f"reports/{report.id}/report.pptx"
+        storage_service.upload_file(tmp.name, object_key, content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+        os.remove(tmp.name)
+        return object_key
     out_path = _output_dir(str(report.id)) / "report.pptx"
     prs.save(str(out_path))
     return str(out_path)

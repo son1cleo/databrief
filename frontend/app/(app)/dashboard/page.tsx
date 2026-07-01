@@ -18,13 +18,13 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">Dashboard</h1>
         <Button
           render={<Link href="/upload" />}
           nativeButton={false}
-          className="bg-brand hover:bg-brand-hover"
+          className="bg-brand font-mono hover:bg-brand-hover"
         >
-          New Report
+          New Report →
         </Button>
       </div>
 

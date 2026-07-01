@@ -1,99 +1,87 @@
 import Link from "next/link";
-import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const PLANS = [
   {
-    name: "Free",
-    price: "$0",
-    period: "",
-    reports: "3 reports",
-    overage: null,
-    cta: "Start free",
-    featured: false,
-  },
-  {
-    name: "Starter",
+    tag: "STARTER",
     price: "$49",
-    period: "/mo",
-    reports: "20 reports / month",
-    overage: "$3 per extra report",
-    cta: "Start with Starter",
-    featured: false,
+    per: "/mo",
+    reports: "20 reports/month",
+    overage: "+ $3 per extra report",
+    features: ["PDF + Word output", "All file formats", "1 user"],
+    cta: "Get started",
+    highlight: false,
   },
   {
-    name: "Growth",
+    tag: "GROWTH",
     price: "$149",
-    period: "/mo",
-    reports: "100 reports / month",
-    overage: "$2 per extra report",
-    cta: "Start with Growth",
-    featured: true,
+    per: "/mo",
+    reports: "100 reports/month",
+    overage: "+ $2 per extra report",
+    features: ["PDF + Word + PPTX", "5 themes", "5 users", "Brand kit"],
+    cta: "Get started",
+    highlight: true,
   },
   {
-    name: "Business",
+    tag: "BUSINESS",
     price: "$399",
-    period: "/mo",
+    per: "/mo",
     reports: "Unlimited reports",
-    overage: null,
-    cta: "Start with Business",
-    featured: false,
+    overage: "No overage charges",
+    features: ["All outputs", "20 users", "API access", "Priority queue"],
+    cta: "Get started",
+    highlight: false,
   },
 ];
 
 export function PricingSection() {
   return (
-    <section id="pricing" className="border-t border-border px-6 py-24">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-16 text-center">
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-text-muted">Pricing</p>
-          <h2 className="mx-auto max-w-lg text-[clamp(28px,4vw,40px)] font-bold leading-tight">
+    <section id="pricing" className="border-t border-border py-24">
+      <div className="mx-auto max-w-7xl px-6">
+        <div className="mb-14">
+          <p className="mb-3 font-mono text-xs text-data-ink">PRICING</p>
+          <h2 className="font-display text-4xl font-bold tracking-tight text-foreground">
             Pay for stories, not seats.
           </h2>
         </div>
 
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
           {PLANS.map((plan) => (
             <div
-              key={plan.name}
+              key={plan.tag}
               className={cn(
-                "flex flex-col rounded-xl border p-6",
-                plan.featured ? "border-brand bg-brand/[0.06] glow-accent" : "border-border bg-surface"
+                "flex flex-col rounded-lg border p-6",
+                plan.highlight
+                  ? "glow-brand border-brand bg-brand/5"
+                  : "border-border bg-surface"
               )}
             >
-              {plan.featured && (
-                <span className="mb-3 w-fit rounded-full bg-brand px-2.5 py-0.5 text-[10px] font-semibold text-white">
-                  MOST POPULAR
+              <p className="mb-4 font-mono text-xs tracking-wide text-data-ink">{plan.tag}</p>
+              <div className="mb-1 flex items-baseline gap-1">
+                <span className="font-display text-5xl font-extrabold tracking-tight text-foreground">
+                  {plan.price}
                 </span>
-              )}
-              <h3 className="text-sm font-semibold text-text-muted">{plan.name}</h3>
-              <div className="mt-2 mb-4 flex items-baseline gap-1">
-                <span className="text-3xl font-extrabold tracking-tight">{plan.price}</span>
-                {plan.period && <span className="text-sm text-text-muted">{plan.period}</span>}
+                <span className="font-mono text-sm text-muted-foreground">{plan.per}</span>
               </div>
-              <ul className="mb-6 flex-1 space-y-2.5 text-[13px] text-text-muted">
-                <li className="flex items-center gap-2">
-                  <Check className="size-3.5 shrink-0 text-brand" />
-                  {plan.reports}
-                </li>
-                {plan.overage && (
-                  <li className="flex items-center gap-2">
-                    <Check className="size-3.5 shrink-0 text-brand" />
-                    {plan.overage}
+              <p className="mb-1 font-mono text-xs text-muted-foreground">{plan.reports}</p>
+              <p className="mb-6 font-mono text-xs text-muted-foreground">{plan.overage}</p>
+
+              <ul className="mb-8 flex-1 space-y-2.5">
+                {plan.features.map((f) => (
+                  <li key={f} className="flex items-center gap-2 font-mono text-xs text-foreground/80">
+                    <span className="size-1 shrink-0 rounded-full bg-data-ink" />
+                    {f}
                   </li>
-                )}
-                <li className="flex items-center gap-2">
-                  <Check className="size-3.5 shrink-0 text-brand" />
-                  PDF, Word &amp; PPTX export
-                </li>
+                ))}
               </ul>
+
               <Link
                 href="/login"
                 className={cn(
-                  "rounded-md px-4 py-2.5 text-center text-sm font-medium transition-colors",
-                  plan.featured
+                  "rounded px-4 py-2.5 text-center font-mono text-sm transition-all",
+                  plan.highlight
                     ? "bg-brand text-white hover:bg-brand-hover"
-                    : "border border-border text-foreground hover:border-text-subtle"
+                    : "border border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
                 )}
               >
                 {plan.cta}

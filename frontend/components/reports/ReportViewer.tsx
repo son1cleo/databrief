@@ -6,8 +6,9 @@ interface ReportViewerProps {
 
 export function ReportViewer({ html }: ReportViewerProps) {
   const clean = DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: ["h1", "h2", "h3", "p", "ul", "ol", "li", "em", "strong", "br"],
-    ALLOWED_ATTR: [],
+    ALLOWED_TAGS: ["h1", "h2", "h3", "p", "ul", "ol", "li", "em", "strong", "br", "img", "div"],
+    ALLOWED_ATTR: ["src", "style", "alt"],
+    ADD_DATA_URI_TAGS: ["img"],
   });
 
   return (

@@ -1,12 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { OnboardingProgress } from "@/components/layout/OnboardingProgress";
 import { Step1Upload } from "./Step1Upload";
 import { Step2Preview } from "./Step2Preview";
 import { Step3Configure, type StepConfig } from "./Step3Configure";
 import { Step4Generate } from "./Step4Generate";
-import { uploadFile, createReport } from "@/app/(app)/upload/actions";
+import { createReport } from "@/app/(app)/upload/actions";
 import type { UploadPreview } from "@/lib/types";
 
 interface UploadWizardProps {
@@ -15,6 +14,7 @@ interface UploadWizardProps {
 }
 
 const TOTAL_STEPS = 4;
+const STEP_NAMES = ["UPLOAD FILE", "PREVIEW DATA", "CONFIGURE REPORT", "GENERATE"];
 
 export function UploadWizard({ defaultIndustry, hasBrandKit }: UploadWizardProps) {
   const [step, setStep] = useState(1);
@@ -27,16 +27,23 @@ export function UploadWizard({ defaultIndustry, hasBrandKit }: UploadWizardProps
   const handleUpload = async (file: File) => {
     setUploadLoading(true);
     setUploadError(null);
-    const formData = new FormData();
-    formData.append("file", file);
-    const result = await uploadFile(formData);
-    if (result.success) {
-      setPreview(result.data);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setUploadError(body?.detail ?? "Could not process that file. Try a different one.");
+        return;
+      }
+      const data: UploadPreview = await res.json();
+      setPreview(data);
       setStep(2);
-    } else {
-      setUploadError("Could not process that file. Try a different one.");
+    } catch {
+      setUploadError("Upload failed. Check your connection and try again.");
+    } finally {
+      setUploadLoading(false);
     }
-    setUploadLoading(false);
   };
 
   const handleConfigure = async (config: StepConfig) => {
@@ -63,7 +70,18 @@ export function UploadWizard({ defaultIndustry, hasBrandKit }: UploadWizardProps
   return (
     <div className="mx-auto max-w-2xl py-4">
       <div className="mb-10">
-        <OnboardingProgress step={step} total={TOTAL_STEPS} />
+        <div className="mb-2 flex items-center justify-between font-mono text-xs">
+          <span className="text-muted-foreground">
+            STEP {step} OF {TOTAL_STEPS}
+          </span>
+          <span className="text-data-ink">{STEP_NAMES[step - 1]}</span>
+        </div>
+        <div className="h-0.5 w-full overflow-hidden rounded-full bg-border">
+          <div
+            className="h-full bg-brand transition-all"
+            style={{ width: `${(step / TOTAL_STEPS) * 100}%` }}
+          />
+        </div>
       </div>
 
       {step === 1 && (

@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     nextauth_secret: str = "dev-secret-change-me"
 
-    anthropic_api_key: str = ""
+    groq_api_key: str = ""
 
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
@@ -19,6 +19,12 @@ class Settings(BaseSettings):
 
     upload_dir: str = "/app/uploads"
     max_file_size_mb: int = 50
+
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket_name: str = "databrief"
+    r2_public_url: str = ""
 
     frontend_url: str = "http://localhost:3000"
 

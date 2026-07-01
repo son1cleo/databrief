@@ -2,10 +2,11 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_current_user, get_db
+from src.core.config import settings
 from src.models.user import User
 from src.repositories import report_repo
 
@@ -20,17 +21,26 @@ EXTENSIONS = {"pdf": "pdf", "word": "docx", "pptx": "pptx"}
 PATH_FIELDS = {"pdf": "pdf_path", "word": "word_path", "pptx": "pptx_path"}
 
 
-def _stream(report_id: uuid.UUID, fmt: str, db: Session, current_user: User) -> FileResponse:
+def _stream(report_id: uuid.UUID, fmt: str, db: Session, current_user: User):
     report = report_repo.get_for_user(db, report_id, current_user.id)
     if report is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
 
-    path = getattr(report, PATH_FIELDS[fmt])
-    if not path or not Path(path).exists():
+    object_key = getattr(report, PATH_FIELDS[fmt])
+    if not object_key:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{fmt} export not available yet")
 
     filename = f"{(report.title or 'databrief-report')[:60]}.{EXTENSIONS[fmt]}"
-    return FileResponse(path, media_type=MEDIA_TYPES[fmt], filename=filename)
+
+    if not settings.r2_account_id:
+        # Local dev: object_key is a filesystem path
+        if not Path(object_key).exists():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found locally")
+        return FileResponse(object_key, media_type=MEDIA_TYPES[fmt], filename=filename)
+
+    from src.services import storage_service
+    url = storage_service.presigned_download_url(object_key, filename=filename)
+    return RedirectResponse(url=url, status_code=302)
 
 
 @router.get("/{report_id}/pdf")

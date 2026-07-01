@@ -36,6 +36,16 @@ def build_word(report: Report) -> str:
             for li in tag.find_all("li"):
                 doc.add_paragraph(li.get_text(strip=True), style="List Bullet")
 
+    from src.services import storage_service
+    import tempfile, os
+    if storage_service._r2_configured():
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+        tmp.close()
+        doc.save(tmp.name)
+        object_key = f"reports/{report.id}/report.docx"
+        storage_service.upload_file(tmp.name, object_key, content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        os.remove(tmp.name)
+        return object_key
     out_path = _output_dir(str(report.id)) / "report.docx"
     doc.save(str(out_path))
     return str(out_path)
