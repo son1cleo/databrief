@@ -33,6 +33,7 @@ export async function runGenerateReportPipelineDirect(data: GenerateReportEventD
 
     let storyArc;
     let findingsCount = 0;
+    let rows: Awaited<ReturnType<typeof parseUploadTabular>>["rows"] | null = null;
 
     if (isStructured) {
       const parsed = await parseUploadTabular(upload);
@@ -40,12 +41,14 @@ export async function runGenerateReportPipelineDirect(data: GenerateReportEventD
       const built = analyzeAndBuildStoryArc(parsed.rows, parsed.columns, question, columnMeta);
       storyArc = built.storyArc;
       findingsCount = built.findingsCount;
+      rows = built.rows;
     } else {
       const text = await parseUploadText(upload);
       storyArc = buildTextStoryArc(text, question);
     }
 
-    const narration = await narrate(storyArc, industry, question);
+    const narration = await narrate(storyArc, industry, question, rows);
+    storyArc = narration.storyArc;
     const title = deriveTitle(storyArc.hook);
 
     await prisma.report.update({

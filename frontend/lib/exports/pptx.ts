@@ -167,7 +167,10 @@ export async function buildPptx({ storyArc, theme, brand }: PptxExportData): Pro
   if (storyArc.action) builder.statementSlide("WHAT TO DO NEXT", storyArc.action);
   if (storyArc.open_question) builder.statementSlide("THE QUESTION TO INVESTIGATE", storyArc.open_question);
 
-  if (findings.length > 0) builder.appendixSlide(findings);
+  // findings is now the full ranked list (the LLM picks the climax from all of
+  // it), not just a pre-capped top 5 -- cap the appendix slide separately so it
+  // doesn't overflow with dozens of rows.
+  if (findings.length > 0) builder.appendixSlide(findings.slice(0, 15));
 
   const out = await pptx.write({ outputType: "nodebuffer" });
   return Buffer.from(out as Uint8Array);

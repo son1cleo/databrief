@@ -22,6 +22,18 @@ export const storyBlockSchema = z.discriminatedUnion("type", [
 export type StoryBlock = z.infer<typeof storyBlockSchema>;
 
 export const storyNarrationSchema = z.object({
+  hook: z.string().describe("A punchy, curiosity-driven headline naming the real story, grounded in the climax finding's actual numbers"),
+  climaxIndex: z
+    .number()
+    .int()
+    .nullable()
+    .describe(
+      "0-based index into the findings array of whichever finding is genuinely the best story here (most surprising/consequential for the industry), not necessarily the highest-magnitude one. Null if there are no findings (raw-text documents) or nothing stands out."
+    ),
+  implication: z
+    .string()
+    .describe("What the climax finding specifically means, citing its actual numbers -- never a generic sentence that could apply to any dataset"),
+  action: z.string().describe("A concrete, specific next step grounded in the climax finding's actual numbers"),
   blocks: z.array(storyBlockSchema),
 });
 

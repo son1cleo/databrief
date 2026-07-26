@@ -117,7 +117,7 @@ export function analyzeAndBuildStoryArc(
   columns: string[],
   question: string | null,
   columnMeta: ColumnClassification | null
-): { storyArc: StoryArc; findingsCount: number } {
+): { storyArc: StoryArc; findingsCount: number; rows: Row[] } {
   const { rows: finalRows, columns: finalColumns, relevantCols } = addChangeColumns(
     rows,
     columns,
@@ -132,21 +132,52 @@ export function analyzeAndBuildStoryArc(
     independentVar: columnMeta?.independent_var ?? null,
     dependentVar: columnMeta?.dependent_var ?? null,
   });
-  const top = rankFindings(findings, 5, relevantCols);
-  for (const finding of top) {
-    const b64 = chartForFinding(finding, finalRows);
-    if (b64) finding.extra.chart_b64 = b64;
-  }
-  const storyArc = buildStoryArc(top, finalRows.length, finalColumns.length, finalColumns, question);
-  return { storyArc, findingsCount: top.length };
+  // Every finding goes to the story arc (and the LLM) so it can pick the best
+  // narrative climax itself, not just the highest insight.ts score -- charts
+  // are rendered lazily in narrate() only for whichever findings end up
+  // referenced, so this doesn't mean rendering a chart per finding here.
+  const ranked = rankFindings(findings, findings.length, relevantCols);
+  const storyArc = buildStoryArc(ranked, finalRows.length, finalColumns.length, finalColumns, question);
+  return { storyArc, findingsCount: ranked.length, rows: finalRows };
 }
 
+/** Narrates the story arc and folds the LLM's choices (hook, climax,
+ * implication, action) back into the returned storyArc so every export
+ * format -- including PPTX, which reads storyArc.climax/implication/action
+ * directly instead of the prose blocks -- stays consistent with what was
+ * actually narrated. Charts are rendered here, lazily, only for findings the
+ * narration actually references (via chart blocks or the chosen climax),
+ * since the LLM now sees every finding rather than a pre-rendered top 5. */
 export async function narrate(
   storyArc: StoryArc,
   industry: string | null,
-  question: string | null
-): Promise<{ blocks: import("@/lib/llm/schemas").StoryBlock[]; wordCount: number }> {
-  return generateStoryBlocks(storyArc, industry, question);
+  question: string | null,
+  rows: Row[] | null
+): Promise<{ storyArc: StoryArc; blocks: import("@/lib/llm/schemas").StoryBlock[]; wordCount: number }> {
+  const result = await generateStoryBlocks(storyArc, industry, question);
+
+  const updatedArc: StoryArc = {
+    ...storyArc,
+    hook: result.hook,
+    implication: result.implication,
+    action: result.action,
+    climax: result.climaxIndex !== null ? (storyArc.findings[result.climaxIndex] ?? storyArc.climax) : storyArc.climax,
+  };
+
+  if (rows) {
+    const referenced = new Set<number>();
+    for (const b of result.blocks) if (b.type === "chart") referenced.add(b.findingRef);
+    if (result.climaxIndex !== null) referenced.add(result.climaxIndex);
+    for (const idx of referenced) {
+      const finding = updatedArc.findings[idx];
+      if (finding && !finding.extra.chart_b64) {
+        const b64 = chartForFinding(finding, rows);
+        if (b64) finding.extra.chart_b64 = b64;
+      }
+    }
+  }
+
+  return { storyArc: updatedArc, blocks: result.blocks, wordCount: result.wordCount };
 }
 
 export function brandFor(report: ReportBrandRef, user: UserBrandRef): ExportBrand {

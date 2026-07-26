@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/db";
 import { inngest, GENERATE_REPORT_EVENT, type GenerateReportEventData } from "./client";
-import { buildTextStoryArc } from "@/lib/story";
+import { buildTextStoryArc, type StoryArc } from "@/lib/story";
 import {
   loadReportMetadata,
   parseUploadTabular,
@@ -28,8 +28,9 @@ export const generateReport = inngest.createFunction(
 
       const isStructured = STRUCTURED_TYPES.has(upload.dataType ?? "");
 
-      let storyArc;
+      let storyArc: StoryArc;
       let findingsCount = 0;
+      let rows: Awaited<ReturnType<typeof parseUploadTabular>>["rows"] | null = null;
 
       if (isStructured) {
         const parsed = await step.run("parse-upload", () => parseUploadTabular(upload));
@@ -43,12 +44,14 @@ export const generateReport = inngest.createFunction(
         );
         storyArc = built.storyArc;
         findingsCount = built.findingsCount;
+        rows = built.rows;
       } else {
         const text = await step.run("parse-upload", () => parseUploadText(upload));
         storyArc = await step.run("build-text-story-arc", () => buildTextStoryArc(text, question));
       }
 
-      const narration = await step.run("narrate", () => narrate(storyArc, industry, question));
+      const narration = await step.run("narrate", () => narrate(storyArc, industry, question, rows));
+      storyArc = narration.storyArc;
 
       const title = deriveTitle(storyArc.hook);
 

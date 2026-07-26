@@ -56,36 +56,71 @@ export async function identifyRelevantColumns(
   };
 }
 
-const SYSTEM_PROMPT = `You are DataBrief's story writer. You turn pre-computed statistical \
-findings into a curiosity-driven narrative that makes the reader lean forward.
+const SYSTEM_PROMPT = `You are DataBrief's story writer. You're handed every statistical \
+finding computed on this dataset and your job is to find the actual story in them -- \
+not report them in the order given.
+
+Pick your climax:
+- Look at every finding in the array, not just the first few. Choose the one that's \
+genuinely the most surprising, consequential, or counter-intuitive for a reader in the \
+{industry} industry -- not automatically the highest-magnitude one.
+- Set climaxIndex to that finding's 0-based index. If nothing stands out (thin or \
+purely descriptive data), set it to null.
+
+Build real tension:
+- If the data sets up an expectation and then breaks it (e.g. "more leverage should \
+mean more profit -- it doesn't"), write toward that reveal instead of stating the twist \
+in the first sentence. Let the hook create the question; let the climax answer it.
+- Not every dataset has a twist. Don't invent tension that isn't there -- a strong, \
+plainly-stated finding beats a forced cliffhanger.
+- Work in a brief, natural line of editorial framing where it fits (e.g. "Of everything \
+in this data, one number stands out") so the climax choice reads as an intentional \
+edit, not an arbitrary pick. Don't expose your reasoning as a separate meta-commentary \
+block.
+
+Be specific, not generic:
+- Every sentence in the implication and action fields, and in the findings section of \
+the blocks, must cite an actual number, percentage, or comparison from the input. If a \
+sentence would still make sense with the numbers deleted, cut it.
+- implication and action must be about THIS climax finding specifically. A sentence \
+that could be pasted unchanged into a report on a different dataset is a sign you've \
+written a generic sentence -- rewrite it grounded in this finding's actual values.
 
 Rules:
-- Only narrate the facts given to you in the story arc JSON. Never invent numbers, \
-trends, or findings that aren't present in the input.
-- Write for a reader in the {industry} industry -- use vocabulary and examples that \
-would resonate with that field.
-- Follow the story arc structure exactly: open with the hook, establish context, walk \
-through the findings in order, build to the climax, explain the implication, recommend \
-the action, and close with the open question.
-- Tone: confident, curious, a little provocative -- like a smart colleague who just \
-found something you need to see, not a dry report.
+- Only narrate facts given to you in the findings JSON. Never invent numbers, trends, \
+or findings that aren't present in the input.
+- Write for a reader in the {industry} industry -- vocabulary, stakes, and examples \
+should resonate with that field specifically, not read as generic business writing.
+- Set hook to a punchy headline naming the climax finding's real substance.
+- Structure: hook, context, findings, climax, implication, action, open question -- but \
+you decide which supporting findings get airtime, how many, and how they connect to the \
+climax. Don't mechanically list every finding in array order.
+- Tone: confident, curious, detail-oriented -- like a sharp analyst who dug into the \
+specifics and needs to tell you exactly what they found, not a dry report and not vague \
+hand-waving.
 - Return your narrative as a list of content blocks (heading/paragraph/list/chart). To \
 reference the chart for a specific finding, emit a block of type "chart" with \
 findingRef set to that finding's 0-based index in the findings array you were given.
 - Target 1000-2000 words for a typical dataset; shorter is fine if the arc is thin.`;
 
 const TEXT_SYSTEM_PROMPT = `You are DataBrief's story writer. You read raw documents and \
-surface what's surprising or noteworthy in them, written as a curiosity-driven story.
+surface what's surprising or noteworthy in them, written as a curiosity-driven, \
+detail-oriented story.
 
 Rules:
 - Only narrate facts present in the document text given to you. Never invent details.
 - Write for a reader in the {industry} industry -- use vocabulary and examples that \
 would resonate with that field.
-- Open with a hook naming the most interesting thing in the document, give context, \
-walk through 3-5 specific findings drawn from the text, then close with an implication \
-and a question worth investigating further.
-- Tone: confident, curious, a little provocative -- like a smart colleague who just \
-read this and needs to tell you about it.
+- Set hook to a headline naming the most interesting, specific thing in the document -- \
+not a generic summary sentence.
+- Set climaxIndex to null (there is no findings array for a raw-text document).
+- Give context, walk through 3-5 specific findings drawn from the text (cite exact \
+figures, quotes, or claims, not paraphrased generalities), then set implication to what \
+the most interesting finding specifically means and action to a concrete next step.
+- If the document sets up an expectation the later text breaks, build toward that \
+reveal rather than stating it upfront.
+- Tone: confident, curious, detail-oriented -- like a sharp analyst who just read this \
+and needs to tell you exactly what they found.
 - Return your narrative as a list of content blocks (heading/paragraph/list) -- there \
 are no findings/charts for a raw-text document.`;
 
@@ -95,16 +130,45 @@ function stripChartB64(extra: Record<string, unknown>): Record<string, unknown> 
   return rest;
 }
 
-/** Returns (blocks, wordCount). Falls back to a deterministic template if no
- * provider is configured or every configured provider's call fails, so the
- * pipeline never hard-fails on an external dependency. */
+export interface StoryNarrationResult {
+  hook: string;
+  /** 0-based index into storyArc.findings the LLM chose as the real story, or
+   * null (no findings / nothing stood out). Bounds-checked against
+   * storyArc.findings before being returned, since this comes from model output. */
+  climaxIndex: number | null;
+  implication: string;
+  action: string;
+  blocks: StoryBlock[];
+  wordCount: number;
+}
+
+/** Used when no provider is configured or every provider's call fails, so the
+ * pipeline never hard-fails on an external dependency. Reuses the rule-based
+ * hook/climax/implication/action already computed on storyArc, since there's
+ * no LLM here to make a better pick. */
+function fallbackResult(storyArc: StoryArc): StoryNarrationResult {
+  const { blocks, wordCount } = fallbackStoryBlocks(storyArc);
+  const idx = storyArc.climax ? storyArc.findings.indexOf(storyArc.climax) : -1;
+  return {
+    hook: storyArc.hook,
+    climaxIndex: idx >= 0 ? idx : null,
+    implication: storyArc.implication,
+    action: storyArc.action,
+    blocks,
+    wordCount,
+  };
+}
+
+/** Narrates the story arc, letting the LLM pick which finding is the real
+ * climax (not just the highest-scoring one) and write implication/action
+ * grounded in that specific finding, rather than the old fixed templates. */
 export async function generateStoryBlocks(
   storyArc: StoryArc,
   industry?: string | null,
   question?: string | null
-): Promise<{ blocks: StoryBlock[]; wordCount: number }> {
+): Promise<StoryNarrationResult> {
   const providers = configuredProviders();
-  if (providers.length === 0) return fallbackStoryBlocks(storyArc);
+  if (providers.length === 0) return fallbackResult(storyArc);
 
   const isTextDoc = storyArc.raw_text !== undefined;
   const systemPrompt = (isTextDoc ? TEXT_SYSTEM_PROMPT : SYSTEM_PROMPT).replace("{industry}", industry || "general business");
@@ -115,10 +179,23 @@ export async function generateStoryBlocks(
     findings: storyArc.findings.map((f) => ({ ...f, extra: stripChartB64(f.extra) })),
   };
   const questionLine = question ? `\nThe user specifically asked: "${question}"` : "";
-  const userMessage = `Here is the pre-computed story arc to narrate:\n\n${JSON.stringify(arcForLlm)}${questionLine}`;
+  const userMessage = `Here is the full list of findings to choose a story from:\n\n${JSON.stringify(arcForLlm)}${questionLine}`;
 
   const outcome = await runWithFallback(providers, systemPrompt, userMessage, storyNarrationSchema);
-  if (outcome.result === null) return fallbackStoryBlocks(storyArc);
+  if (outcome.result === null) return fallbackResult(storyArc);
 
-  return { blocks: outcome.result.blocks, wordCount: countWords(outcome.result.blocks) };
+  const { result } = outcome;
+  const climaxIndex =
+    result.climaxIndex !== null && result.climaxIndex >= 0 && result.climaxIndex < storyArc.findings.length
+      ? result.climaxIndex
+      : null;
+
+  return {
+    hook: result.hook || storyArc.hook,
+    climaxIndex,
+    implication: result.implication || storyArc.implication,
+    action: result.action || storyArc.action,
+    blocks: result.blocks,
+    wordCount: countWords(result.blocks),
+  };
 }
