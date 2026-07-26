@@ -28,6 +28,31 @@ export interface UploadPreview {
   column_count: number | null;
 }
 
+export interface UploadListItem {
+  id: string;
+  filename: string;
+  file_type: string | null;
+  data_type: string | null;
+  file_size_bytes: number | null;
+  row_count: number | null;
+  column_count: number | null;
+  status: string;
+  created_at: string;
+  reports_count: number;
+}
+
+export interface UploadReportSummary {
+  id: string;
+  title: string | null;
+  status: string;
+  created_at: string;
+}
+
+export interface UploadDetail extends UploadListItem {
+  error_message: string | null;
+  reports: UploadReportSummary[];
+}
+
 export interface ReportConfigRequest {
   upload_id: string;
   formats: string[];
@@ -44,7 +69,7 @@ export interface ReportOut {
   title: string | null;
   hook: string | null;
   story_json: Record<string, unknown> | null;
-  story_html: string | null;
+  story_blocks: unknown[] | null;
   word_count: number | null;
   findings_count: number | null;
   status: string;

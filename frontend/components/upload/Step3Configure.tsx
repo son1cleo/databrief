@@ -29,9 +29,10 @@ interface Step3ConfigureProps {
   hasBrandKit: boolean;
   onBack: () => void;
   onContinue: (config: StepConfig) => void;
+  backLabel?: string;
 }
 
-export function Step3Configure({ defaultIndustry, hasBrandKit, onBack, onContinue }: Step3ConfigureProps) {
+export function Step3Configure({ defaultIndustry, hasBrandKit, onBack, onContinue, backLabel = "Back" }: Step3ConfigureProps) {
   const [includeWord, setIncludeWord] = useState(false);
   const [includePptx, setIncludePptx] = useState(false);
   const [pptxTheme, setPptxTheme] = useState("boardroom");
@@ -132,7 +133,7 @@ export function Step3Configure({ defaultIndustry, hasBrandKit, onBack, onContinu
 
       <div className="flex justify-between">
         <Button variant="outline" size="lg" onClick={onBack}>
-          Back
+          {backLabel}
         </Button>
         <Button size="lg" onClick={handleContinue} className="bg-brand hover:bg-brand-hover">
           Generate report

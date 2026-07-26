@@ -1,20 +1,19 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { getApiToken } from "@/lib/apiToken";
-import { apiFetch } from "@/lib/api";
+import { getCurrentUser, toUserOut } from "@/lib/getCurrentUser";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Navbar } from "@/components/layout/Navbar";
 import { PageTransition } from "@/components/layout/PageTransition";
-import type { UserOut } from "@/lib/types";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session) redirect("/login");
 
   const pathname = (await headers()).get("x-pathname") ?? "";
-  const token = await getApiToken();
-  const user = await apiFetch<UserOut>("/api/auth/me", { token });
+  const currentUser = await getCurrentUser();
+  if (!currentUser) redirect("/login");
+  const user = toUserOut(currentUser);
 
   const isOnboarding = pathname.startsWith("/onboarding");
   if (!user.onboarded && !isOnboarding) redirect("/onboarding");

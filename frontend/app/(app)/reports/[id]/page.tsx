@@ -40,7 +40,12 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
         </div>
       )}
 
-      {report.status === "done" && <ReportViewer html={report.story_html ?? ""} />}
+      {report.status === "done" && (
+        <ReportViewer
+          blocks={(report.story_blocks as never[]) ?? []}
+          findings={((report.story_json as { findings?: never[] } | null)?.findings as never[]) ?? []}
+        />
+      )}
     </div>
   );
 }

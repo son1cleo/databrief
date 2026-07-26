@@ -1,18 +1,17 @@
 import Link from "next/link";
-import { getApiToken } from "@/lib/apiToken";
-import { apiFetch } from "@/lib/api";
+import { redirect } from "next/navigation";
+import { getCurrentUser, toUserOut } from "@/lib/getCurrentUser";
 import { listReports } from "@/app/(app)/reports/actions";
 import { StatsBar } from "@/components/dashboard/StatsBar";
 import { UsageProgress } from "@/components/dashboard/UsageProgress";
 import { RecentReports } from "@/components/dashboard/RecentReports";
-import type { UserOut } from "@/lib/types";
 
 export default async function DashboardPage() {
-  const token = await getApiToken();
-  const [user, reports] = await Promise.all([
-    apiFetch<UserOut>("/api/auth/me", { token }),
-    listReports(6, 0),
-  ]);
+  const currentUser = await getCurrentUser();
+  if (!currentUser) redirect("/login");
+
+  const user = toUserOut(currentUser);
+  const reports = await listReports(6, 0);
 
   return (
     <div className="space-y-6 md:space-y-8">

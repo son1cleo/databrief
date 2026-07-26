@@ -1,20 +1,60 @@
-import DOMPurify from "isomorphic-dompurify";
-
-interface ReportViewerProps {
-  html: string;
+interface StoryBlock {
+  type: "heading" | "paragraph" | "list" | "chart";
+  level?: 1 | 2;
+  text?: string;
+  items?: string[];
+  findingRef?: number;
 }
 
-export function ReportViewer({ html }: ReportViewerProps) {
-  const clean = DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: ["h1", "h2", "h3", "p", "ul", "ol", "li", "em", "strong", "br", "img", "div"],
-    ALLOWED_ATTR: ["src", "style", "alt"],
-    ADD_DATA_URI_TAGS: ["img"],
-  });
+interface Finding {
+  extra?: { chart_b64?: string };
+}
 
+interface ReportViewerProps {
+  blocks: StoryBlock[];
+  findings: Finding[];
+}
+
+export function ReportViewer({ blocks, findings }: ReportViewerProps) {
   return (
-    <article
-      className="prose-invert max-w-none [&_h1]:text-3xl [&_h1]:font-bold [&_h1]:mb-4 [&_h1]:text-foreground [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mt-8 [&_h2]:mb-3 [&_h2]:text-brand [&_p]:text-[15px] [&_p]:leading-relaxed [&_p]:text-zinc-300 [&_p]:mb-4 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-4 [&_li]:text-[15px] [&_li]:text-zinc-300 [&_li]:mb-2"
-      dangerouslySetInnerHTML={{ __html: clean }}
-    />
+    <article className="max-w-none">
+      {blocks.map((block, i) => {
+        if (block.type === "heading") {
+          return block.level === 1 ? (
+            <h1 key={i} className="mb-4 text-3xl font-bold text-foreground">
+              {block.text}
+            </h1>
+          ) : (
+            <h2 key={i} className="mt-8 mb-3 text-xl font-semibold text-brand">
+              {block.text}
+            </h2>
+          );
+        }
+        if (block.type === "paragraph") {
+          return (
+            <p key={i} className="mb-4 text-[15px] leading-relaxed text-zinc-300">
+              {block.text}
+            </p>
+          );
+        }
+        if (block.type === "list") {
+          return (
+            <ul key={i} className="mb-4 list-disc pl-5">
+              {(block.items ?? []).map((item, j) => (
+                <li key={j} className="mb-2 text-[15px] text-zinc-300">
+                  {item}
+                </li>
+              ))}
+            </ul>
+          );
+        }
+        // chart
+        const b64 = findings[block.findingRef ?? -1]?.extra?.chart_b64;
+        return b64 ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={i} src={`data:image/png;base64,${b64}`} alt="" className="mb-4 max-w-full rounded" />
+        ) : null;
+      })}
+    </article>
   );
 }
