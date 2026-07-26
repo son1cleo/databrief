@@ -1,6 +1,9 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
+import { CredentialsForm } from "@/components/auth/CredentialsForm";
+import { login } from "./actions";
 
 export default async function LoginPage({
   searchParams,
@@ -24,7 +27,19 @@ export default async function LoginPage({
           </p>
         </div>
         <OAuthButtons callbackUrl={callbackUrl ?? "/dashboard"} />
-        <p className="mt-6 text-center font-mono text-[10px] text-muted-foreground">
+        <div className="my-6 flex items-center gap-3">
+          <div className="h-px flex-1 bg-border" />
+          <span className="font-mono text-[10px] text-muted-foreground">OR</span>
+          <div className="h-px flex-1 bg-border" />
+        </div>
+        <CredentialsForm mode="login" action={login} />
+        <p className="mt-6 text-center font-mono text-xs text-muted-foreground">
+          Don&apos;t have an account?{" "}
+          <Link href="/signup" className="text-brand hover:underline">
+            Sign up
+          </Link>
+        </p>
+        <p className="mt-4 text-center font-mono text-[10px] text-muted-foreground">
           By continuing, you agree to DataBrief&apos;s Terms of Service and Privacy Policy.
         </p>
       </div>

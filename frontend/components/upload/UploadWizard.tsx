@@ -28,29 +28,43 @@ export function UploadWizard({ defaultIndustry, hasBrandKit }: UploadWizardProps
     setUploadLoading(true);
     setUploadError(null);
     try {
-      // Fetch a short-lived API token server-side, then upload directly to
-      // the Railway backend to bypass Vercel's 4.5 MB serverless body limit.
-      const tokenRes = await fetch("/api/auth/token");
-      if (!tokenRes.ok) {
-        setUploadError("Authentication error. Please sign in again.");
-        return;
-      }
-      const { token } = await tokenRes.json();
-
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch(`${apiUrl}/api/uploads`, {
+      // 1. Get a presigned R2 upload URL — keeps file bytes off our own
+      // serverless functions entirely (avoids Vercel's body-size limit).
+      const presignRes = await fetch("/api/uploads/presign", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, contentType: file.type }),
       });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setUploadError(body?.detail ?? "Could not process that file. Try a different one.");
+      if (!presignRes.ok) {
+        const body = await presignRes.json().catch(() => ({}));
+        setUploadError(body?.error ?? "Could not start upload.");
         return;
       }
-      const data: UploadPreview = await res.json();
+      const { uploadUrl, objectKey } = await presignRes.json();
+
+      // 2. Upload the raw bytes straight to R2.
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!putRes.ok) {
+        setUploadError("Upload to storage failed. Try again.");
+        return;
+      }
+
+      // 3. Ask the server to parse it and create the Upload record.
+      const parseRes = await fetch("/api/uploads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ objectKey, filename: file.name }),
+      });
+      if (!parseRes.ok) {
+        const body = await parseRes.json().catch(() => ({}));
+        setUploadError(body?.error ?? "Could not process that file. Try a different one.");
+        return;
+      }
+      const data: UploadPreview = await parseRes.json();
       setPreview(data);
       setStep(2);
     } catch {

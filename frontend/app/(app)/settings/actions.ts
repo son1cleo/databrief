@@ -2,8 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { apiFetch } from "@/lib/api";
-import { getApiToken } from "@/lib/apiToken";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/db";
 
 export async function updateProfile(data: {
   industry?: string;
@@ -13,13 +13,19 @@ export async function updateProfile(data: {
   brand_secondary?: string;
   brand_font?: string;
 }): Promise<void> {
-  const token = await getApiToken();
-  if (!token) redirect("/login");
+  const session = await auth();
+  if (!session?.user?.email) redirect("/login");
 
-  await apiFetch("/api/auth/me", {
-    method: "PATCH",
-    token,
-    body: JSON.stringify(data),
+  await prisma.user.update({
+    where: { email: session.user.email },
+    data: {
+      industry: data.industry,
+      defaultPptxTheme: data.default_pptx_theme,
+      brandLogoUrl: data.brand_logo_url,
+      brandPrimary: data.brand_primary,
+      brandSecondary: data.brand_secondary,
+      brandFont: data.brand_font,
+    },
   });
   revalidatePath("/settings");
   revalidatePath("/brand-kit");

@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { getApiToken } from "@/lib/apiToken";
-import { apiFetch } from "@/lib/api";
+import { redirect } from "next/navigation";
+import { getCurrentUser, toUserOut } from "@/lib/getCurrentUser";
 import { ProfileSettings } from "@/components/settings/ProfileSettings";
-import type { UserOut } from "@/lib/types";
 
 export default async function SettingsPage() {
   const session = await auth();
-  const token = await getApiToken();
-  const user = await apiFetch<UserOut>("/api/auth/me", { token });
+  const currentUser = await getCurrentUser();
+  if (!currentUser) redirect("/login");
+  const user = toUserOut(currentUser);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">

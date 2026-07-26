@@ -1,0 +1,147 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- Auth.js (NextAuth v5) required models ---
+// Field names/shape follow the official Prisma adapter schema so
+// @auth/prisma-adapter works without custom field mapping.
+// https://authjs.dev/getting-started/adapters/prisma
+
+model Account {
+  id                String  @id @default(uuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// --- DataBrief app models (ported from backend/src/models/*.py) ---
+
+model User {
+  id            String    @id @default(uuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  provider      String? // 'google' | 'github' | 'credentials' — last provider used to sign in
+  password      String? // bcrypt hash — null for OAuth-only accounts
+
+  plan         String @default("free") // free|starter|growth|business
+  reportsUsed  Int    @default(0) @map("reports_used")
+  reportsLimit Int    @default(3) @map("reports_limit")
+
+  stripeCustomerId String? @map("stripe_customer_id")
+  stripeSubId      String? @map("stripe_sub_id")
+
+  industry  String?
+  onboarded Boolean @default(false)
+
+  brandLogoUrl     String? @map("brand_logo_url")
+  brandPrimary     String? @map("brand_primary")
+  brandSecondary   String? @map("brand_secondary")
+  brandFont        String? @map("brand_font")
+  defaultPptxTheme String  @default("boardroom") @map("default_pptx_theme")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  accounts Account[]
+  sessions Session[]
+  uploads  Upload[]
+  reports  Report[]
+
+  @@map("users")
+}
+
+model Upload {
+  id            String  @id @default(uuid())
+  userId        String  @map("user_id")
+  filename      String
+  fileType      String? @map("file_type") // csv|excel|xml|pdf|docx|image|json
+  dataType      String? @map("data_type") // structured|semi_structured|unstructured
+  fileSizeBytes Int?    @map("file_size_bytes")
+  rowCount      Int?    @map("row_count")
+  columnCount   Int?    @map("column_count")
+  storagePath   String  @map("storage_path") // R2 object key
+
+  status       String  @default("pending") // pending|processing|done|failed
+  errorMessage String? @map("error_message")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reports Report[]
+
+  @@map("uploads")
+}
+
+model Report {
+  id       String @id @default(uuid())
+  userId   String @map("user_id")
+  uploadId String @map("upload_id")
+
+  title         String?
+  hook          String?
+  storyJson     Json?   @map("story_json")
+  // Structured narration blocks (replaces the old story_html — see migration
+  // plan §5: React-PDF/docx/pptxgenjs all consume this instead of raw HTML).
+  storyBlocks   Json?   @map("story_blocks")
+  wordCount     Int?    @map("word_count")
+  findingsCount Int?    @map("findings_count")
+
+  pdfPath   String? @map("pdf_path")
+  wordPath  String? @map("word_path")
+  pptxPath  String? @map("pptx_path")
+  pptxTheme String? @map("pptx_theme") // boardroom|consulting|startup|editorial|academic
+
+  status       String  @default("generating") // generating|done|failed
+  errorMessage String? @map("error_message")
+  isBranded    Boolean @default(false) @map("is_branded")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  upload Upload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+
+  @@map("reports")
+}

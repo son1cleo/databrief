@@ -1,9 +1,17 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Google from "next-auth/providers/google";
 import GitHub from "next-auth/providers/github";
-import { apiFetch } from "@/lib/api";
+import Credentials from "next-auth/providers/credentials";
+import { PrismaAdapter } from "@auth/prisma-adapter";
+import { prisma } from "@/lib/db";
+import { verifyPassword } from "@/lib/password";
+
+class InvalidLoginError extends CredentialsSignin {
+  code = "invalid_credentials";
+}
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  adapter: PrismaAdapter(prisma),
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
@@ -12,6 +20,25 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     GitHub({
       clientId: process.env.GITHUB_ID,
       clientSecret: process.env.GITHUB_SECRET,
+    }),
+    Credentials({
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      authorize: async (credentials) => {
+        const email = typeof credentials?.email === "string" ? credentials.email.trim().toLowerCase() : null;
+        const password = typeof credentials?.password === "string" ? credentials.password : null;
+        if (!email || !password) throw new InvalidLoginError();
+
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user?.password) throw new InvalidLoginError();
+
+        const valid = await verifyPassword(password, user.password);
+        if (!valid) throw new InvalidLoginError();
+
+        return { id: user.id, email: user.email, name: user.name, image: user.image };
+      },
     }),
   ],
   secret: process.env.NEXTAUTH_SECRET,
@@ -22,19 +49,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   },
   events: {
     async signIn({ user, account }) {
-      if (!user.email || !account) return;
-      // Upsert the user in the FastAPI DB so it exists before any API call.
-      await apiFetch("/api/auth/sync", {
-        method: "POST",
-        body: JSON.stringify({
-          email: user.email,
-          name: user.name,
-          avatar_url: user.image,
-          provider: account.provider,
-        }),
-      }).catch((err) => {
-        console.error("Failed to sync user with backend:", err);
-      });
+      if (!user.id || !account) return;
+      // The Prisma adapter already created/linked the User + Account rows —
+      // just record which provider they most recently signed in with.
+      await prisma.user
+        .update({ where: { id: user.id }, data: { provider: account.provider } })
+        .catch((err) => {
+          console.error("Failed to record sign-in provider:", err);
+        });
     },
   },
   callbacks: {

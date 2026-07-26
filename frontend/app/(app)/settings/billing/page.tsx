@@ -1,11 +1,13 @@
-import { getApiToken } from "@/lib/apiToken";
-import { apiFetch } from "@/lib/api";
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/getCurrentUser";
+import { getUsage } from "@/lib/billing";
 import { BillingPlans } from "@/components/settings/BillingPlans";
-import type { UsageResponse } from "@/lib/types";
 
 export default async function BillingPage() {
-  const token = await getApiToken();
-  const usage = await apiFetch<UsageResponse>("/api/billing/usage", { token });
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const usage = getUsage(user);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">

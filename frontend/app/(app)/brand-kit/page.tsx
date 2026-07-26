@@ -1,11 +1,11 @@
-import { getApiToken } from "@/lib/apiToken";
-import { apiFetch } from "@/lib/api";
+import { redirect } from "next/navigation";
+import { getCurrentUser, toUserOut } from "@/lib/getCurrentUser";
 import { BrandKitForm } from "@/components/settings/BrandKitForm";
-import type { UserOut } from "@/lib/types";
 
 export default async function BrandKitPage() {
-  const token = await getApiToken();
-  const user = await apiFetch<UserOut>("/api/auth/me", { token });
+  const currentUser = await getCurrentUser();
+  if (!currentUser) redirect("/login");
+  const user = toUserOut(currentUser);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">

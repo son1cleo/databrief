@@ -32,7 +32,7 @@ export function ExportMenu({ reportId, pdfReady, wordReady, pptxReady }: ExportM
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {options.map(({ format, label, icon: Icon }) => (
-          <DropdownMenuItem key={format} render={<a href={`/api/download/${reportId}/${format}`} />}>
+          <DropdownMenuItem key={format} render={<a href={`/api/exports/${reportId}/${format}`} />}>
             <Icon className="size-4" />
             {label}
           </DropdownMenuItem>
