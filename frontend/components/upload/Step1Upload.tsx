@@ -1,40 +1,50 @@
 "use client";
 
 import { useState } from "react";
+import { CloudUpload, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Panel, PanelBody, PanelFooter, PanelHeader } from "@/components/ui/panel";
 import { Dropzone } from "./Dropzone";
+
+type UploadPhase = "idle" | "uploading" | "processing";
 
 interface Step1UploadProps {
   onUpload: (file: File) => void;
-  loading: boolean;
+  phase: UploadPhase;
   error: string | null;
 }
 
-export function Step1Upload({ onUpload, loading, error }: Step1UploadProps) {
+const PHASE_LABEL: Record<UploadPhase, string> = {
+  idle: "Continue",
+  uploading: "Uploading…",
+  processing: "Processing…",
+};
+
+export function Step1Upload({ onUpload, phase, error }: Step1UploadProps) {
   const [file, setFile] = useState<File | null>(null);
+  const loading = phase !== "idle";
 
   return (
-    <div>
-      <h2 className="mb-2 font-display text-2xl font-bold tracking-tight text-foreground">
-        Upload your data
-      </h2>
-      <p className="mb-8 font-mono text-sm text-muted-foreground">
-        CSV, Excel, XML, PDF, DOCX, TXT, JSON, PNG, or JPG — up to 50MB.
-      </p>
-
-      <Dropzone onFileSelected={setFile} />
-      {error && <p className="mt-3 font-mono text-sm text-error">{error}</p>}
-
-      <div className="mt-8 flex justify-end">
-        <Button
-          size="lg"
-          disabled={!file || loading}
-          onClick={() => file && onUpload(file)}
-          className="bg-brand font-mono hover:bg-brand-hover"
-        >
-          {loading ? "Uploading..." : "Continue"}
+    <Panel>
+      <PanelHeader
+        icon={CloudUpload}
+        title="Upload your data"
+        description="CSV, Excel, XML, PDF, DOCX, TXT, JSON, PNG, or JPG — up to 50MB."
+      />
+      <PanelBody className="space-y-3">
+        <Dropzone onFileSelected={setFile} />
+        {error && (
+          <p className="flex items-start gap-2 text-sm text-error">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+            {error}
+          </p>
+        )}
+      </PanelBody>
+      <PanelFooter className="justify-end">
+        <Button disabled={!file || loading} onClick={() => file && onUpload(file)}>
+          {PHASE_LABEL[phase]}
         </Button>
-      </div>
-    </div>
+      </PanelFooter>
+    </Panel>
   );
 }

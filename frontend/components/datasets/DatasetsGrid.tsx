@@ -2,6 +2,10 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { Database, Upload } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { IconBadge } from "@/components/ui/icon-badge";
+import { Panel } from "@/components/ui/panel";
 import { DatasetCard } from "./DatasetCard";
 import { deleteDataset } from "@/app/(app)/datasets/actions";
 import type { UploadListItem } from "@/lib/types";
@@ -31,20 +35,38 @@ export function DatasetsGrid({ initialDatasets }: DatasetsGridProps) {
 
   if (datasets.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-surface p-12 text-center">
-        <p className="mb-3 text-sm text-text-muted">No datasets yet.</p>
-        <Link href="/upload" className="text-sm text-brand hover:underline">
-          Upload your first dataset
-        </Link>
-      </div>
+      <Panel className="flex flex-col items-center px-6 py-16 text-center">
+        <IconBadge icon={Database} color="muted" size="xl" />
+        <p className="mt-4 text-sm font-medium text-foreground">No datasets yet</p>
+        <p className="mt-1 mb-5 max-w-sm text-xs text-muted-foreground">
+          Upload a CSV, spreadsheet, or document to get started.
+        </p>
+        <Button render={<Link href="/upload" />} nativeButton={false} size="sm">
+          <Upload />
+          Upload dataset
+        </Button>
+      </Panel>
     );
   }
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {datasets.map((dataset) => (
-        <DatasetCard key={dataset.id} dataset={dataset} onDelete={handleDelete} />
-      ))}
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {datasets.length} dataset{datasets.length === 1 ? "" : "s"} · files you&apos;ve uploaded
+          and the reports built from them.
+        </p>
+        <Button render={<Link href="/upload" />} nativeButton={false} size="sm" className="shrink-0">
+          <Upload />
+          Upload dataset
+        </Button>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {datasets.map((dataset) => (
+          <DatasetCard key={dataset.id} dataset={dataset} onDelete={handleDelete} />
+        ))}
+      </div>
     </div>
   );
 }

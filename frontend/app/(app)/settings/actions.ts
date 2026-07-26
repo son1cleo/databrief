@@ -12,6 +12,7 @@ export async function updateProfile(data: {
   brand_primary?: string;
   brand_secondary?: string;
   brand_font?: string;
+  preferred_llm_provider?: string | null;
 }): Promise<void> {
   const session = await auth();
   if (!session?.user?.email) redirect("/login");
@@ -25,6 +26,7 @@ export async function updateProfile(data: {
       brandPrimary: data.brand_primary,
       brandSecondary: data.brand_secondary,
       brandFont: data.brand_font,
+      preferredLlmProvider: data.preferred_llm_provider,
     },
   });
   revalidatePath("/settings");

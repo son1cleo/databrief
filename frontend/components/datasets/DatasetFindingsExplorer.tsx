@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { cn } from "@/lib/utils";
 import type { FindingWithChart } from "@/lib/datasetAnalysis";
 
@@ -28,7 +29,13 @@ export function DatasetFindingsExplorer({ findingsByType }: DatasetFindingsExplo
   const [index, setIndex] = useState(0);
 
   if (sections.length === 0 || !activeType) {
-    return <p className="text-sm text-text-muted">No notable patterns found beyond the column summary.</p>;
+    return (
+      <Panel className="px-6 py-14 text-center">
+        <p className="text-sm text-muted-foreground">
+          No notable patterns found beyond the column summary.
+        </p>
+      </Panel>
+    );
   }
 
   const items = findingsByType[activeType] ?? [];
@@ -40,60 +47,81 @@ export function DatasetFindingsExplorer({ findingsByType }: DatasetFindingsExplo
   };
 
   return (
-    <div>
-      <div className="mb-5 flex flex-wrap gap-2">
-        {sections.map((type) => (
-          <Button
-            key={type}
-            variant={type === activeType ? "default" : "outline"}
-            size="sm"
-            onClick={() => selectType(type)}
-            className={cn(type === activeType && "bg-brand hover:bg-brand-hover")}
-          >
-            {SECTION_LABEL[type] ?? type}
-            <span className="ml-1 text-xs opacity-70">{findingsByType[type].length}</span>
-          </Button>
-        ))}
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        {sections.map((type) => {
+          const active = type === activeType;
+          return (
+            <button
+              key={type}
+              type="button"
+              onClick={() => selectType(type)}
+              aria-pressed={active}
+              className={cn(
+                "flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors duration-150",
+                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                active
+                  ? "border-border-soft bg-surface text-foreground shadow-card"
+                  : "border-transparent text-muted-foreground hover:bg-surface/60 hover:text-foreground"
+              )}
+            >
+              <span className="font-medium">{SECTION_LABEL[type] ?? type}</span>
+              <span
+                className={cn(
+                  "rounded-full px-1.5 py-0.5 font-mono text-[10px]",
+                  active ? "bg-brand/15 text-brand" : "bg-inset"
+                )}
+              >
+                {findingsByType[type].length}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {current && (
-        <div className="rounded-xl border border-border bg-surface p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <span className="text-xs text-text-muted">
-              {index + 1} of {items.length}
-            </span>
-            {items.length > 1 && (
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  onClick={() => setIndex((i) => (i - 1 + items.length) % items.length)}
-                  aria-label="Previous finding"
-                >
-                  <ChevronLeft className="size-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon-sm"
-                  onClick={() => setIndex((i) => (i + 1) % items.length)}
-                  aria-label="Next finding"
-                >
-                  <ChevronRight className="size-4" />
-                </Button>
-              </div>
+        <Panel>
+          <PanelHeader
+            icon={Sparkles}
+            title={SECTION_LABEL[activeType] ?? activeType}
+            description={`Finding ${index + 1} of ${items.length}`}
+            action={
+              items.length > 1 && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    onClick={() => setIndex((i) => (i - 1 + items.length) % items.length)}
+                    aria-label="Previous finding"
+                  >
+                    <ChevronLeft />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon-sm"
+                    onClick={() => setIndex((i) => (i + 1) % items.length)}
+                    aria-label="Next finding"
+                  >
+                    <ChevronRight />
+                  </Button>
+                </div>
+              )
+            }
+          />
+          <PanelBody className="space-y-4">
+            {current.chart && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`data:image/png;base64,${current.chart}`}
+                alt=""
+                className="max-w-full rounded-xl bg-inset"
+              />
             )}
-          </div>
-
-          {current.chart && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={`data:image/png;base64,${current.chart}`}
-              alt=""
-              className="mb-4 max-w-full rounded border border-border"
-            />
-          )}
-          <p className="text-sm text-text-muted">{current.finding.description}</p>
-        </div>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {current.finding.description}
+            </p>
+          </PanelBody>
+        </Panel>
       )}
     </div>
   );

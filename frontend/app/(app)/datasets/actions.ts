@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/getCurrentUser";
 import { listUploadsForUser, deleteUploadForUser, getUploadForUser } from "@/lib/uploads";
 import { buildDatasetInsights, type DatasetInsights } from "@/lib/datasetAnalysis";
+import { StorageTimeoutError } from "@/lib/storage";
 import { ApiError } from "@/lib/api";
 import type { UploadListItem, UploadDetail } from "@/lib/types";
 
@@ -18,6 +19,20 @@ export async function listDatasets(limit = 50, offset = 0): Promise<UploadListIt
 export interface DatasetDetail {
   upload: UploadDetail;
   insights: DatasetInsights | null;
+  /** Set when status is "done" but insights still couldn't be loaded (e.g.
+   * the stored file is missing or storage timed out) -- lets the page show a
+   * specific reason instead of just silently rendering nothing. */
+  insightsError: string | null;
+}
+
+function insightsErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.name === "NoSuchKey") {
+    return "The original file for this dataset is no longer available in storage.";
+  }
+  if (err instanceof StorageTimeoutError) {
+    return "Storage took too long to respond. Try refreshing the page.";
+  }
+  return "Could not load a preview for this file.";
 }
 
 export async function getDataset(uploadId: string): Promise<DatasetDetail> {
@@ -47,9 +62,17 @@ export async function getDataset(uploadId: string): Promise<DatasetDetail> {
     })),
   };
 
-  const insights = upload.status === "done" ? await buildDatasetInsights(upload) : null;
+  let insights: DatasetInsights | null = null;
+  let insightsError: string | null = null;
+  if (upload.status === "done") {
+    try {
+      insights = await buildDatasetInsights(upload);
+    } catch (err) {
+      insightsError = insightsErrorMessage(err);
+    }
+  }
 
-  return { upload: uploadOut, insights };
+  return { upload: uploadOut, insights, insightsError };
 }
 
 export async function deleteDataset(uploadId: string): Promise<void> {

@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
+import { CreditCard, Settings } from "lucide-react";
 import { getCurrentUser } from "@/lib/getCurrentUser";
 import { getUsage } from "@/lib/billing";
+import { BreadcrumbBar } from "@/components/ui/breadcrumb-bar";
 import { BillingPlans } from "@/components/settings/BillingPlans";
 
 export default async function BillingPage() {
@@ -10,8 +12,13 @@ export default async function BillingPage() {
   const usage = getUsage(user);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Billing</h1>
+    <div className="space-y-5">
+      <BreadcrumbBar
+        items={[
+          { label: "Settings", href: "/settings", icon: Settings },
+          { label: "Billing & plan", icon: CreditCard },
+        ]}
+      />
       <BillingPlans usage={usage} />
     </div>
   );

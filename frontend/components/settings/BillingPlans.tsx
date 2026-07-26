@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check } from "lucide-react";
+import { Check, CreditCard, Gauge } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
+import { Panel, PanelBody, PanelFooter, PanelHeader } from "@/components/ui/panel";
+import { SettingsSection } from "@/components/ui/settings-section";
 import { cn } from "@/lib/utils";
 import { startCheckout, openBillingPortal } from "@/app/(app)/settings/billing/actions";
 import type { UsageResponse } from "@/lib/types";
@@ -52,66 +54,88 @@ export function BillingPlans({ usage }: BillingPlansProps) {
     });
   };
 
+  const unlimited = usage.plan === "business";
   const pct = usage.reports_limit > 0 ? Math.min((usage.reports_used / usage.reports_limit) * 100, 100) : 0;
 
   return (
     <div className="space-y-8">
-      <div className="rounded-xl border border-border bg-surface p-5">
-        <div className="mb-2 flex items-center justify-between">
-          <p className="text-sm font-medium">Current usage</p>
-          <p className="text-sm text-text-muted">
-            {usage.reports_used} / {usage.plan === "business" ? "∞" : usage.reports_limit} reports
-          </p>
-        </div>
-        {usage.plan !== "business" && <Progress value={pct} className="h-2" />}
-        {usage.overage_cents != null && (
-          <p className="mt-3 text-xs text-text-muted">
-            Reports beyond your limit are billed at ${(usage.overage_cents / 100).toFixed(2)} each.
-          </p>
-        )}
-        {usage.plan !== "free" && (
-          <Button variant="outline" size="sm" className="mt-4" onClick={handlePortal} disabled={isPending}>
-            {pendingPlan === "portal" ? "Opening..." : "Manage billing"}
-          </Button>
-        )}
-      </div>
+      <SettingsSection title="Usage" description="Where you are in the current billing period.">
+        <Panel>
+          <PanelHeader
+            icon={Gauge}
+            title="Current usage"
+            action={
+              <Badge variant="neutral">
+                {usage.reports_used} / {unlimited ? "∞" : usage.reports_limit} reports
+              </Badge>
+            }
+          />
+          <PanelBody className="space-y-3">
+            {!unlimited && (
+              <div className="flex h-2 w-full overflow-hidden rounded-full bg-inset">
+                <div
+                  className="h-full rounded-full bg-brand transition-[width] duration-500 ease-out"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            )}
+            {usage.overage_cents != null && (
+              <p className="text-xs text-muted-foreground">
+                Reports beyond your limit are billed at ${(usage.overage_cents / 100).toFixed(2)} each.
+              </p>
+            )}
+          </PanelBody>
+          {usage.plan !== "free" && (
+            <PanelFooter>
+              <Button variant="outline" size="sm" onClick={handlePortal} disabled={isPending}>
+                <CreditCard />
+                {pendingPlan === "portal" ? "Opening…" : "Manage billing"}
+              </Button>
+            </PanelFooter>
+          )}
+        </Panel>
+      </SettingsSection>
 
       {error && <p className="text-sm text-error">{error}</p>}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {PLANS.map((plan) => {
-          const isCurrent = plan.key === usage.plan;
-          return (
-            <div
-              key={plan.key}
-              className={cn(
-                "flex flex-col rounded-xl border p-5",
-                isCurrent ? "border-brand bg-brand/[0.06]" : "border-border bg-surface"
-              )}
-            >
-              <h3 className="text-sm font-semibold">{plan.name}</h3>
-              <p className="my-2 text-2xl font-bold tracking-tight">{plan.price}</p>
-              <p className="mb-4 flex items-center gap-1.5 text-xs text-text-muted">
-                <Check className="size-3.5 text-brand" />
-                {plan.reports}
-              </p>
-              {isCurrent ? (
-                <span className="mt-auto rounded-md border border-brand py-2 text-center text-sm font-medium text-brand">
-                  Current plan
-                </span>
-              ) : plan.purchasable ? (
-                <Button
-                  className="mt-auto bg-brand hover:bg-brand-hover"
-                  onClick={() => handleUpgrade(plan.key as "starter" | "growth" | "business")}
-                  disabled={isPending}
-                >
-                  {pendingPlan === plan.key ? "Redirecting..." : "Upgrade"}
-                </Button>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
+      <SettingsSection title="Plans" description="Upgrade or change your plan at any time.">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {PLANS.map((plan) => {
+            const isCurrent = plan.key === usage.plan;
+            return (
+              <Panel
+                key={plan.key}
+                className={cn("flex flex-col p-5", isCurrent && "border-brand/40 bg-brand/4")}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-foreground">{plan.name}</h3>
+                  {isCurrent && <Badge variant="brand">Current</Badge>}
+                </div>
+                <p className="my-2 font-display text-2xl font-bold tracking-tight text-foreground">
+                  {plan.price}
+                </p>
+                <p className="mb-5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Check className="size-3.5 text-brand" />
+                  {plan.reports}
+                </p>
+                {isCurrent ? (
+                  <Button variant="outline" disabled className="mt-auto w-full">
+                    Current plan
+                  </Button>
+                ) : plan.purchasable ? (
+                  <Button
+                    className="mt-auto w-full"
+                    onClick={() => handleUpgrade(plan.key as "starter" | "growth" | "business")}
+                    disabled={isPending}
+                  >
+                    {pendingPlan === plan.key ? "Redirecting…" : "Upgrade"}
+                  </Button>
+                ) : null}
+              </Panel>
+            );
+          })}
+        </div>
+      </SettingsSection>
     </div>
   );
 }

@@ -14,6 +14,7 @@ export interface UserOut {
   brand_secondary: string | null;
   brand_font: string | null;
   default_pptx_theme: string | null;
+  preferred_llm_provider: string | null;
   created_at: string;
 }
 

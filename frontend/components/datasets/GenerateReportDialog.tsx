@@ -43,8 +43,8 @@ export function GenerateReportDialog({ uploadId, defaultIndustry, hasBrandKit }:
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button className="bg-brand hover:bg-brand-hover" />}>
-        <Sparkles className="size-4" />
+      <DialogTrigger render={<Button />}>
+        <Sparkles />
         Generate report
       </DialogTrigger>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
@@ -59,7 +59,9 @@ export function GenerateReportDialog({ uploadId, defaultIndustry, hasBrandKit }:
           onContinue={handleContinue}
         />
         {error && <p className="text-sm text-error">{error}</p>}
-        {isPending && <p className="text-sm text-text-muted">Starting report generation...</p>}
+        {isPending && (
+          <p className="text-sm text-muted-foreground">Starting report generation…</p>
+        )}
       </DialogContent>
     </Dialog>
   );

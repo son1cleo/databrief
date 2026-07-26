@@ -1,40 +1,65 @@
 import Link from "next/link";
-import { FileText } from "lucide-react";
+import { ArrowRight, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { IconBadge } from "@/components/ui/icon-badge";
+import { Panel } from "@/components/ui/panel";
+import { statusBadgeVariant } from "@/lib/utils";
 import type { UploadReportSummary } from "@/lib/types";
 
 interface DatasetReportsListProps {
   reports: UploadReportSummary[];
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  done: "bg-success/15 text-success border-success/30",
-  generating: "bg-warning/15 text-warning border-warning/30",
-  failed: "bg-error/15 text-error border-error/30",
+const STATUS_LABEL: Record<string, string> = {
+  done: "Ready",
+  generating: "Generating",
+  failed: "Failed",
 };
 
 export function DatasetReportsList({ reports }: DatasetReportsListProps) {
   if (reports.length === 0) {
-    return <p className="text-sm text-text-muted">No reports generated from this dataset yet.</p>;
+    return (
+      <Panel className="flex flex-col items-center px-6 py-14 text-center">
+        <IconBadge icon={FileText} color="muted" size="xl" />
+        <p className="mt-4 text-sm font-medium text-foreground">No reports yet</p>
+        <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+          Generate a report from this dataset to see it here.
+        </p>
+      </Panel>
+    );
   }
 
   return (
-    <div className="space-y-2">
+    <Panel className="divide-y divide-border-soft overflow-hidden">
       {reports.map((report) => (
         <Link
           key={report.id}
           href={`/reports/${report.id}`}
-          className="flex items-center gap-3 rounded-lg border border-border bg-surface p-3 transition-colors hover:border-text-subtle"
+          className="group/row flex items-center gap-3 px-5 py-3.5 transition-colors duration-150 hover:bg-surface-2"
         >
-          <FileText className="size-4 shrink-0 text-brand" />
-          <span className="flex-1 truncate text-sm font-medium">{report.title ?? "Untitled Report"}</span>
-          <Badge variant="outline" className={cn("text-[10px] uppercase", STATUS_STYLES[report.status])}>
-            {report.status}
+          <IconBadge
+            icon={FileText}
+            color={report.status === "failed" ? "error" : "brand"}
+            size="md"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-foreground">
+              {report.title ?? "Untitled report"}
+            </p>
+            <p className="mt-0.5 font-mono text-[10px] tracking-wide text-muted-foreground uppercase">
+              {new Date(report.created_at).toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </p>
+          </div>
+          <Badge variant={statusBadgeVariant(report.status)} className="shrink-0">
+            {STATUS_LABEL[report.status] ?? report.status}
           </Badge>
-          <span className="shrink-0 text-xs text-text-muted">{new Date(report.created_at).toLocaleDateString()}</span>
+          <ArrowRight className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/row:opacity-100" />
         </Link>
       ))}
-    </div>
+    </Panel>
   );
 }

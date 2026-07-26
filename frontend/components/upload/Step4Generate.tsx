@@ -2,16 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Check, Sparkles, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { IconBadge } from "@/components/ui/icon-badge";
+import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 import { getReport } from "@/app/(app)/upload/actions";
 import type { ReportOut } from "@/lib/types";
 
 const PIPELINE = [
-  { cmd: "file_service.detect_format()", done: "csv detected" },
-  { cmd: "analysis_service.run()", done: "12 findings" },
-  { cmd: "insight_service.rank()", done: "top 5 selected" },
-  { cmd: "story_service.build_arc()", done: "arc complete" },
-  { cmd: "llm_service.narrate()", done: "writing story..." },
+  { cmd: "Detecting file format", done: "format detected" },
+  { cmd: "Running analysis", done: "findings extracted" },
+  { cmd: "Ranking insights", done: "top insights selected" },
+  { cmd: "Building the story arc", done: "arc complete" },
+  { cmd: "Writing the narrative", done: "writing…" },
 ];
 
 interface Step4GenerateProps {
@@ -54,67 +57,78 @@ export function Step4Generate({ reportId }: Step4GenerateProps) {
   }, [reportId]);
 
   if (error) {
-    return <p className="text-center font-mono text-sm text-error">{error}</p>;
+    return (
+      <Panel className="flex flex-col items-center border-error/25 bg-error/5 px-6 py-12 text-center">
+        <IconBadge icon={TriangleAlert} color="error" size="xl" />
+        <p className="mt-4 text-sm text-error">{error}</p>
+      </Panel>
+    );
   }
 
   if (report?.status === "done") {
     return (
-      <div className="text-center">
-        <div className="mx-auto mb-6 flex size-16 items-center justify-center rounded-lg bg-success/15">
-          <span className="text-2xl text-success">✓</span>
-        </div>
-        <h2 className="mb-2 font-display text-2xl font-bold tracking-tight text-foreground">
+      <Panel className="flex flex-col items-center px-6 py-14 text-center">
+        <IconBadge icon={Check} color="success" size="xl" />
+        <h2 className="mt-5 font-display text-2xl font-bold tracking-tight text-foreground">
           Your story is ready.
         </h2>
-        <p className="mb-8 font-mono text-sm text-muted-foreground">
-          {report.title ?? "Untitled Report"}
+        <p className="mt-1.5 mb-6 text-sm text-muted-foreground">
+          {report.title ?? "Untitled report"}
         </p>
-        <Button
-          size="lg"
-          onClick={() => router.push(`/reports/${report.id}`)}
-          className="bg-brand font-mono hover:bg-brand-hover"
-        >
+        <Button size="lg" onClick={() => router.push(`/reports/${report.id}`)}>
           View report
         </Button>
-      </div>
+      </Panel>
     );
   }
 
   if (report?.status === "failed") {
     return (
-      <div className="text-center">
-        <p className="mb-2 font-mono text-lg font-semibold text-error">Generation failed</p>
-        <p className="font-mono text-sm text-muted-foreground">
+      <Panel className="flex flex-col items-center border-error/25 bg-error/5 px-6 py-12 text-center">
+        <IconBadge icon={TriangleAlert} color="error" size="xl" />
+        <p className="mt-4 text-base font-semibold text-error">Generation failed</p>
+        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
           {report.error_message ?? "Please try again."}
         </p>
-      </div>
+      </Panel>
     );
   }
 
   return (
-    <div>
-      <h2 className="mb-6 text-center font-display text-2xl font-bold tracking-tight text-foreground">
-        Analyzing your data...
-      </h2>
-      <div className="glow-brand rounded-lg border border-border bg-surface p-5">
-        <div className="space-y-2">
-          {PIPELINE.map((step, i) => {
-            if (i > stepIndex) return null;
-            const isCurrent = i === stepIndex;
-            return (
-              <div
-                key={step.cmd}
-                className="flex items-center justify-between gap-4 font-mono text-xs"
+    <Panel>
+      <PanelHeader
+        icon={Sparkles}
+        title="Analyzing your data…"
+        description="This usually takes under a minute."
+      />
+      <PanelBody className="space-y-2">
+        {PIPELINE.map((step, i) => {
+          if (i > stepIndex) return null;
+          const isCurrent = i === stepIndex;
+          return (
+            <div
+              key={step.cmd}
+              className="flex items-center justify-between gap-4 rounded-xl bg-inset px-3.5 py-2.5"
+            >
+              <span className="flex min-w-0 items-center gap-2.5 text-sm text-foreground">
+                {isCurrent ? (
+                  <span className="size-4 shrink-0 animate-spin rounded-full border-2 border-brand/25 border-t-brand" />
+                ) : (
+                  <Check className="size-4 shrink-0 text-success" />
+                )}
+                <span className="truncate">{step.cmd}</span>
+              </span>
+              <span
+                className={`shrink-0 font-mono text-[10px] tracking-wide uppercase ${
+                  isCurrent ? "text-brand" : "text-success"
+                }`}
               >
-                <span className="text-data-ink">{`> ${step.cmd}`}</span>
-                <span className={isCurrent ? "text-data-ink" : "text-success"}>
-                  {isCurrent ? "⟳" : "✓"} {step.done}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
+                {step.done}
+              </span>
+            </div>
+          );
+        })}
+      </PanelBody>
+    </Panel>
   );
 }

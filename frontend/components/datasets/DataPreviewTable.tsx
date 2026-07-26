@@ -1,3 +1,5 @@
+import { Table2 } from "lucide-react";
+import { Panel, PanelHeader } from "@/components/ui/panel";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { Row } from "@/lib/analysis";
 
@@ -13,25 +15,32 @@ function formatCell(value: unknown): string {
 
 export function DataPreviewTable({ columns, rows }: DataPreviewTableProps) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-border bg-surface">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            {columns.map((col) => (
-              <TableHead key={col}>{col}</TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row, i) => (
-            <TableRow key={i}>
+    <Panel className="overflow-hidden">
+      <PanelHeader
+        icon={Table2}
+        title="Data preview"
+        description={`First ${rows.length} row${rows.length === 1 ? "" : "s"}`}
+      />
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
               {columns.map((col) => (
-                <TableCell key={col}>{formatCell(row[col])}</TableCell>
+                <TableHead key={col}>{col}</TableHead>
               ))}
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row, i) => (
+              <TableRow key={i}>
+                {columns.map((col) => (
+                  <TableCell key={col}>{formatCell(row[col])}</TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </Panel>
   );
 }

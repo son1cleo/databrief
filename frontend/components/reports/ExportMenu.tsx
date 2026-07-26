@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, FileType, Presentation } from "lucide-react";
+import { Download, FileText, FileType, Presentation } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,7 +27,8 @@ export function ExportMenu({ reportId, pdfReady, wordReady, pptxReady }: ExportM
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button className="bg-brand hover:bg-brand-hover" />}>
+      <DropdownMenuTrigger render={<Button />}>
+        <Download />
         Export
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">

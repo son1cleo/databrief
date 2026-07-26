@@ -37,7 +37,9 @@ export async function runGenerateReportPipelineDirect(data: GenerateReportEventD
 
     if (isStructured) {
       const parsed = await parseUploadTabular(upload);
-      const columnMeta = question ? await classifyQuestion(question, parsed.columns, parsed.rows) : null;
+      const columnMeta = question
+        ? await classifyQuestion(question, parsed.columns, parsed.rows, user.preferredLlmProvider)
+        : null;
       const built = analyzeAndBuildStoryArc(parsed.rows, parsed.columns, question, columnMeta);
       storyArc = built.storyArc;
       findingsCount = built.findingsCount;
@@ -47,7 +49,7 @@ export async function runGenerateReportPipelineDirect(data: GenerateReportEventD
       storyArc = buildTextStoryArc(text, question);
     }
 
-    const narration = await narrate(storyArc, industry, question, rows);
+    const narration = await narrate(storyArc, industry, question, rows, user.preferredLlmProvider);
     storyArc = narration.storyArc;
     const title = deriveTitle(storyArc.hook);
 

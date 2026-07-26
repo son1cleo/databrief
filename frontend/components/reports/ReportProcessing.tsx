@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { Panel } from "@/components/ui/panel";
 import { getReport } from "@/app/(app)/upload/actions";
 
 interface ReportProcessingProps {
@@ -31,10 +32,12 @@ export function ReportProcessing({ reportId }: ReportProcessingProps) {
   }, [reportId, router]);
 
   return (
-    <div className="flex flex-col items-center justify-center py-24 text-center">
-      <div className="mb-6 size-12 animate-spin rounded-full border-2 border-border border-t-brand" />
-      <p className="text-lg font-semibold">Still generating your story...</p>
-      <p className="mt-1 text-sm text-text-muted">This page will update automatically.</p>
-    </div>
+    <Panel className="flex flex-col items-center px-6 py-16 text-center">
+      <div className="size-11 animate-spin rounded-full border-2 border-inset border-t-brand" />
+      <p className="mt-5 text-base font-semibold text-foreground">
+        Still generating your story…
+      </p>
+      <p className="mt-1 text-sm text-muted-foreground">This page will update automatically.</p>
+    </Panel>
   );
 }

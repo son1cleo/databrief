@@ -82,6 +82,10 @@ model User {
   brandFont        String? @map("brand_font")
   defaultPptxTheme String  @default("boardroom") @map("default_pptx_theme")
 
+  // Which LLM provider to try first for report narration -- null means the
+  // deployment's default fallback order (groq, then mistral, then nvidia).
+  preferredLlmProvider String? @map("preferred_llm_provider")
+
   createdAt DateTime @default(now()) @map("created_at")
 
   accounts Account[]

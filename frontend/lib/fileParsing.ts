@@ -145,14 +145,33 @@ function stringifyRow(row: Record<string, unknown>): Record<string, string> {
   return Object.fromEntries(Object.entries(row).map(([k, v]) => [k, v == null ? "" : String(v)]));
 }
 
-export async function parsePreview(buffer: Buffer, fileType: string): Promise<ParsedPreview> {
+/** Drops everything after the last newline, so a byte-range read that stopped
+ * mid-record doesn't hand Papa.parse a half-written final line. */
+function trimToLastNewline(buffer: Buffer): Buffer {
+  const idx = buffer.lastIndexOf("\n");
+  return idx === -1 ? buffer : buffer.subarray(0, idx);
+}
+
+export interface ParsePreviewOptions {
+  /** True when `buffer` is only the head of a larger file (a Range read).
+   * Only meaningful for line-oriented formats -- the total row count can't be
+   * known from a partial read, so it comes back null rather than reporting
+   * the sampled count as if it were the whole file. */
+  truncated?: boolean;
+}
+
+export async function parsePreview(
+  buffer: Buffer,
+  fileType: string,
+  options: ParsePreviewOptions = {}
+): Promise<ParsedPreview> {
   if (DATAFRAME_FILE_TYPES.has(fileType)) {
-    const { columns, rows } = parseTabular(buffer, fileType);
+    const { columns, rows } = parseTabular(options.truncated ? trimToLastNewline(buffer) : buffer, fileType);
     return {
       columns,
       rows: rows.slice(0, 10).map(stringifyRow),
       textPreview: null,
-      rowCount: rows.length,
+      rowCount: options.truncated ? null : rows.length,
       columnCount: columns.length,
     };
   }

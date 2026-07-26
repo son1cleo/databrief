@@ -51,7 +51,8 @@ export async function parseUploadText(upload: UploadFileRef): Promise<string> {
 export async function classifyQuestion(
   question: string,
   columns: string[],
-  rows: Row[]
+  rows: Row[],
+  preferredProvider?: string | null
 ): Promise<ColumnClassification> {
   const sampleValues = Object.fromEntries(
     columns.map((col) => [
@@ -62,7 +63,7 @@ export async function classifyQuestion(
         .filter((v) => v !== null && v !== undefined),
     ])
   );
-  return identifyRelevantColumns(question, columns, sampleValues);
+  return identifyRelevantColumns(question, columns, sampleValues, preferredProvider);
 }
 
 const POST_PREFIXES = ["post_", "_post", "after_"];
@@ -152,9 +153,10 @@ export async function narrate(
   storyArc: StoryArc,
   industry: string | null,
   question: string | null,
-  rows: Row[] | null
+  rows: Row[] | null,
+  preferredProvider?: string | null
 ): Promise<{ storyArc: StoryArc; blocks: import("@/lib/llm/schemas").StoryBlock[]; wordCount: number }> {
-  const result = await generateStoryBlocks(storyArc, industry, question);
+  const result = await generateStoryBlocks(storyArc, industry, question, preferredProvider);
 
   const updatedArc: StoryArc = {
     ...storyArc,

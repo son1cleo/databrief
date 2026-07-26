@@ -2,7 +2,10 @@
 
 import { useCallback, useState } from "react";
 import { useDropzone, type FileRejection } from "react-dropzone";
-import { UploadCloud, FileText, X } from "lucide-react";
+import { CloudUpload, FileText, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { IconBadge } from "@/components/ui/icon-badge";
 import { cn } from "@/lib/utils";
 
 const ACCEPT = {
@@ -61,19 +64,17 @@ export function Dropzone({ onFileSelected }: DropzoneProps) {
 
   if (file) {
     return (
-      <div className="flex items-center justify-between rounded-lg border border-border bg-surface p-5">
-        <div className="flex items-center gap-3">
-          <FileText className="size-5 shrink-0 text-brand" />
-          <div>
-            <p className="font-mono text-sm text-foreground">{file.name}</p>
-            <p className="font-mono text-xs text-muted-foreground">
-              {(file.size / 1024).toFixed(0)} KB
-            </p>
+      <div className="flex items-center justify-between gap-3 rounded-xl bg-inset p-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <IconBadge icon={FileText} color="brand" size="md" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-foreground">{file.name}</p>
+            <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(0)} KB</p>
           </div>
         </div>
-        <button onClick={clear} className="text-muted-foreground hover:text-foreground">
-          <X className="size-4" />
-        </button>
+        <Button variant="ghost" size="icon-sm" onClick={clear} aria-label="Remove file">
+          <X />
+        </Button>
       </div>
     );
   }
@@ -83,30 +84,34 @@ export function Dropzone({ onFileSelected }: DropzoneProps) {
       <div
         {...getRootProps()}
         className={cn(
-          "flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-10 text-center transition-colors",
+          "flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-6 py-12 text-center transition-colors duration-150",
           isDragActive
-            ? "glow-brand border-brand bg-brand/5"
-            : "border-border bg-surface hover:border-foreground/30"
+            ? "border-brand bg-brand/5"
+            : "border-border-soft bg-inset hover:border-brand/40"
         )}
       >
         <input {...getInputProps()} />
-        <UploadCloud className={cn("size-8", isDragActive ? "text-brand" : "text-muted-foreground")} />
-        <p className="font-mono text-sm text-muted-foreground">
-          drag_file_here.{"{csv,xlsx,pdf}"}
-        </p>
-        <p className="font-mono text-xs text-muted-foreground">or click to browse</p>
-        <div className="mt-2 flex flex-wrap items-center justify-center gap-1.5">
+        <IconBadge
+          icon={CloudUpload}
+          color={isDragActive ? "brand" : "muted"}
+          size="xl"
+          className={isDragActive ? undefined : "bg-surface"}
+        />
+        <div>
+          <p className="text-sm font-medium text-foreground">
+            {isDragActive ? "Drop your file here" : "Drag a file here, or click to browse"}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">Up to 50MB</p>
+        </div>
+        <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
           {FILE_TYPES.map((type) => (
-            <span
-              key={type}
-              className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-            >
+            <Badge key={type} variant="outline" className="uppercase">
               {type}
-            </span>
+            </Badge>
           ))}
         </div>
       </div>
-      {error && <p className="mt-2 font-mono text-xs text-error">{error}</p>}
+      {error && <p className="mt-2 text-xs text-error">{error}</p>}
     </div>
   );
 }

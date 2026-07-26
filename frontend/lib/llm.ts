@@ -27,7 +27,8 @@ Rules:
 export async function identifyRelevantColumns(
   question: string,
   columns: string[],
-  sampleValues: Record<string, unknown[]>
+  sampleValues: Record<string, unknown[]>,
+  preferredProvider?: string | null
 ): Promise<ColumnClassification> {
   const fallback: ColumnClassification = {
     relevant_cols: [],
@@ -36,7 +37,7 @@ export async function identifyRelevantColumns(
     question_type: "general",
   };
 
-  const providers = configuredProviders();
+  const providers = configuredProviders(preferredProvider);
   if (providers.length === 0) return fallback;
 
   const colContext = Object.fromEntries(
@@ -165,9 +166,10 @@ function fallbackResult(storyArc: StoryArc): StoryNarrationResult {
 export async function generateStoryBlocks(
   storyArc: StoryArc,
   industry?: string | null,
-  question?: string | null
+  question?: string | null,
+  preferredProvider?: string | null
 ): Promise<StoryNarrationResult> {
-  const providers = configuredProviders();
+  const providers = configuredProviders(preferredProvider);
   if (providers.length === 0) return fallbackResult(storyArc);
 
   const isTextDoc = storyArc.raw_text !== undefined;

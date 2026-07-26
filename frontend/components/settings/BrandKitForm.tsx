@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { Eye, Image as ImageIcon, Palette, Type } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Panel, PanelBody, PanelFooter, PanelHeader } from "@/components/ui/panel";
+import { SettingsSection } from "@/components/ui/settings-section";
 import { updateProfile } from "@/app/(app)/settings/actions";
 import type { UserOut } from "@/lib/types";
 
@@ -33,74 +36,102 @@ export function BrandKitForm({ user }: BrandKitFormProps) {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="rounded-xl border border-border bg-surface p-5 space-y-5">
-        <div>
-          <Label className="mb-2 block text-sm font-medium">Logo URL</Label>
-          <Input
-            value={logoUrl}
-            onChange={(e) => setLogoUrl(e.target.value)}
-            placeholder="https://your-domain.com/logo.png"
-          />
-          <p className="mt-1.5 text-xs text-text-muted">
-            Used in branded PDF and PowerPoint exports.
-          </p>
-        </div>
-
-        <div className="grid gap-5 sm:grid-cols-2">
-          <div>
-            <Label className="mb-2 block text-sm font-medium">Primary color</Label>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={primary}
-                onChange={(e) => setPrimary(e.target.value)}
-                className="size-9 shrink-0 cursor-pointer rounded-md border border-border bg-transparent"
+    <div className="space-y-8">
+      <SettingsSection
+        title="Brand kit"
+        description="Applied to branded PDF and PowerPoint exports."
+      >
+        <Panel>
+          <PanelBody className="space-y-5">
+            <div>
+              <Label className="mb-2 flex items-center gap-2 text-sm font-medium">
+                <ImageIcon className="size-4 text-muted-foreground" />
+                Logo URL
+              </Label>
+              <Input
+                value={logoUrl}
+                onChange={(e) => setLogoUrl(e.target.value)}
+                placeholder="https://your-domain.com/logo.png"
               />
-              <Input value={primary} onChange={(e) => setPrimary(e.target.value)} />
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Used in branded PDF and PowerPoint exports.
+              </p>
             </div>
-          </div>
-          <div>
-            <Label className="mb-2 block text-sm font-medium">Secondary color</Label>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={secondary}
-                onChange={(e) => setSecondary(e.target.value)}
-                className="size-9 shrink-0 cursor-pointer rounded-md border border-border bg-transparent"
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div>
+                <Label className="mb-2 flex items-center gap-2 text-sm font-medium">
+                  <Palette className="size-4 text-muted-foreground" />
+                  Primary color
+                </Label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    aria-label="Primary color"
+                    value={primary}
+                    onChange={(e) => setPrimary(e.target.value)}
+                    className="size-9 shrink-0 cursor-pointer rounded-lg border border-border-soft bg-transparent"
+                  />
+                  <Input value={primary} onChange={(e) => setPrimary(e.target.value)} />
+                </div>
+              </div>
+              <div>
+                <Label className="mb-2 flex items-center gap-2 text-sm font-medium">
+                  <Palette className="size-4 text-muted-foreground" />
+                  Secondary color
+                </Label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    aria-label="Secondary color"
+                    value={secondary}
+                    onChange={(e) => setSecondary(e.target.value)}
+                    className="size-9 shrink-0 cursor-pointer rounded-lg border border-border-soft bg-transparent"
+                  />
+                  <Input value={secondary} onChange={(e) => setSecondary(e.target.value)} />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <Label className="mb-2 flex items-center gap-2 text-sm font-medium">
+                <Type className="size-4 text-muted-foreground" />
+                Font name
+              </Label>
+              <Input
+                value={font}
+                onChange={(e) => setFont(e.target.value)}
+                placeholder="e.g. Helvetica Neue"
               />
-              <Input value={secondary} onChange={(e) => setSecondary(e.target.value)} />
             </div>
-          </div>
-        </div>
-
-        <div>
-          <Label className="mb-2 block text-sm font-medium">Font name</Label>
-          <Input value={font} onChange={(e) => setFont(e.target.value)} placeholder="e.g. Helvetica Neue" />
-        </div>
-
-        <div className="flex items-center gap-3">
-          <Button onClick={handleSave} disabled={isPending} className="bg-brand hover:bg-brand-hover">
-            {isPending ? "Saving..." : "Save brand kit"}
-          </Button>
-          {saved && <span className="text-sm text-success">Saved</span>}
-        </div>
-      </div>
+          </PanelBody>
+          <PanelFooter className="justify-end">
+            {saved && <span className="mr-auto text-sm text-success">Saved</span>}
+            <Button onClick={handleSave} disabled={isPending}>
+              {isPending ? "Saving…" : "Save brand kit"}
+            </Button>
+          </PanelFooter>
+        </Panel>
+      </SettingsSection>
 
       {logoUrl && (
-        <div className="rounded-xl border border-border bg-surface p-5">
-          <p className="mb-3 text-xs uppercase tracking-wide text-text-muted">Preview</p>
-          <div
-            className="flex items-center gap-3 rounded-lg border p-4"
-            style={{ borderColor: primary }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={logoUrl} alt="Brand logo" className="h-8 max-w-32 object-contain" />
-            <span className="text-sm font-medium" style={{ color: primary }}>
-              Sample heading
-            </span>
-          </div>
-        </div>
+        <SettingsSection title="Preview" description="How your brand appears on an export header.">
+          <Panel>
+            <PanelHeader icon={Eye} title="Export header preview" />
+            <PanelBody>
+              <div
+                className="flex items-center gap-3 rounded-xl border bg-inset p-4"
+                style={{ borderColor: primary }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={logoUrl} alt="Brand logo" className="h-8 max-w-32 object-contain" />
+                <span className="text-sm font-medium" style={{ color: primary }}>
+                  Sample heading
+                </span>
+              </div>
+            </PanelBody>
+          </Panel>
+        </SettingsSection>
       )}
     </div>
   );

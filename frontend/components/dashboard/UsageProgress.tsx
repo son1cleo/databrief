@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { Activity, TriangleAlert } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Panel, PanelBody, PanelHeader } from "@/components/ui/panel";
 
 interface UsageProgressProps {
   used: number;
@@ -13,25 +16,42 @@ export function UsageProgress({ used, limit, plan }: UsageProgressProps) {
   const atLimit = used >= limit;
 
   return (
-    <div className="rounded-lg border border-border bg-surface p-5">
-      <div className="mb-2 flex items-center justify-between font-mono text-xs">
-        <span className="text-muted-foreground">MONTHLY USAGE</span>
-        <span className="text-data-ink">
-          {used} / {limit} reports
-        </span>
-      </div>
-      <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
-        <div className="h-full rounded-full bg-brand transition-all" style={{ width: `${pct}%` }} />
-      </div>
-      {atLimit && (
-        <p className="mt-3 font-mono text-xs text-warning">
-          You&apos;ve used all your reports.{" "}
-          <Link href="/settings/billing" className="underline">
-            Upgrade your plan
-          </Link>{" "}
-          to keep generating.
-        </p>
-      )}
-    </div>
+    <Panel>
+      <PanelHeader
+        icon={Activity}
+        title="Monthly usage"
+        action={
+          <Badge variant={atLimit ? "warning" : "neutral"}>
+            {used} / {limit} reports
+          </Badge>
+        }
+      />
+      <PanelBody className="space-y-3">
+        <div className="flex h-2 w-full overflow-hidden rounded-full bg-inset">
+          <div
+            className={`h-full rounded-full transition-[width] duration-500 ease-out ${
+              atLimit ? "bg-warning" : "bg-brand"
+            }`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        {atLimit ? (
+          <p className="flex items-start gap-2 text-xs text-warning">
+            <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              You&apos;ve used all your reports.{" "}
+              <Link href="/settings/billing" className="font-medium underline">
+                Upgrade your plan
+              </Link>{" "}
+              to keep generating.
+            </span>
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Resets at the start of your next billing period.
+          </p>
+        )}
+      </PanelBody>
+    </Panel>
   );
 }

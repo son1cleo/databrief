@@ -1,9 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { Database, Trash2 } from "lucide-react";
+import { CalendarDays, Database, FileSpreadsheet, Grid2x2, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { IconBadge } from "@/components/ui/icon-badge";
+import { MetaBox } from "@/components/ui/meta-box";
+import { Panel } from "@/components/ui/panel";
+import { statusBadgeVariant } from "@/lib/utils";
 import type { UploadListItem } from "@/lib/types";
 
 interface DatasetCardProps {
@@ -11,11 +15,11 @@ interface DatasetCardProps {
   onDelete?: (dataset: UploadListItem) => void;
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  done: "bg-success/15 text-success border-success/30",
-  pending: "bg-warning/15 text-warning border-warning/30",
-  processing: "bg-warning/15 text-warning border-warning/30",
-  failed: "bg-error/15 text-error border-error/30",
+const STATUS_LABEL: Record<string, string> = {
+  done: "Ready",
+  pending: "Pending",
+  processing: "Processing",
+  failed: "Failed",
 };
 
 function formatBytes(bytes: number | null): string | null {
@@ -27,54 +31,80 @@ function formatBytes(bytes: number | null): string | null {
 
 export function DatasetCard({ dataset, onDelete }: DatasetCardProps) {
   const size = formatBytes(dataset.file_size_bytes);
+  const shape =
+    dataset.row_count != null && dataset.column_count != null
+      ? `${dataset.row_count.toLocaleString()} × ${dataset.column_count}`
+      : "—";
 
   return (
-    <div className="group relative rounded-xl border border-border bg-surface p-5 transition-colors hover:border-text-subtle">
-      <Link href={`/datasets/${dataset.id}`} className="block">
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <Badge variant="outline" className={cn("text-[10px] uppercase", STATUS_STYLES[dataset.status])}>
-            {dataset.status}
-          </Badge>
-          <span className="shrink-0 text-xs text-text-muted">
-            {new Date(dataset.created_at).toLocaleDateString()}
-          </span>
+    <Panel className="flex flex-col p-4 transition-[box-shadow,transform] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-card-hover">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <IconBadge
+            icon={Database}
+            color={dataset.status === "failed" ? "error" : "brand"}
+            size="md"
+          />
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-semibold text-foreground">{dataset.filename}</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {dataset.reports_count > 0
+                ? `${dataset.reports_count} report${dataset.reports_count === 1 ? "" : "s"}`
+                : "No reports yet"}
+            </p>
+          </div>
         </div>
+        <Badge variant={statusBadgeVariant(dataset.status)} className="shrink-0">
+          {STATUS_LABEL[dataset.status] ?? dataset.status}
+        </Badge>
+      </div>
 
-        <div className="mb-3 flex items-center gap-2">
-          <Database className="size-4 shrink-0 text-brand" />
-          <h3 className="line-clamp-1 text-sm font-semibold">{dataset.filename}</h3>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
-          {dataset.file_type && <span className="uppercase">{dataset.file_type}</span>}
-          {size && <span>{size}</span>}
-          {dataset.row_count != null && dataset.column_count != null && (
-            <span>
-              {dataset.row_count.toLocaleString()} rows &times; {dataset.column_count} cols
+      <div className="mb-4 grid grid-cols-2 gap-2">
+        <MetaBox
+          icon={FileSpreadsheet}
+          label="Type"
+          value={
+            <span className="uppercase">
+              {dataset.file_type ?? "—"}
+              {size ? ` · ${size}` : ""}
             </span>
-          )}
-        </div>
+          }
+        />
+        <MetaBox icon={Grid2x2} label="Rows × cols" value={shape} />
+      </div>
 
-        <div className="mt-4 text-xs text-text-muted">
-          {dataset.reports_count > 0 ? (
-            <span>
-              {dataset.reports_count} report{dataset.reports_count === 1 ? "" : "s"} generated
-            </span>
-          ) : (
-            <span>No reports yet</span>
-          )}
-        </div>
-      </Link>
+      <div className="mb-4 flex items-center gap-1.5 text-xs text-muted-foreground">
+        <CalendarDays className="size-3.5" />
+        Uploaded{" "}
+        {new Date(dataset.created_at).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })}
+      </div>
 
-      {onDelete && (
-        <button
-          onClick={() => onDelete(dataset)}
-          className="absolute top-4 right-4 text-text-muted opacity-0 transition-opacity hover:text-error group-hover:opacity-100"
-          aria-label="Delete dataset"
+      <div className="mt-auto flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          render={<Link href={`/datasets/${dataset.id}`} />}
+          nativeButton={false}
+          className="flex-1"
         >
-          <Trash2 className="size-4" />
-        </button>
-      )}
-    </div>
+          Explore dataset
+        </Button>
+        {onDelete && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => onDelete(dataset)}
+            aria-label={`Delete ${dataset.filename}`}
+            className="hover:bg-error/10 hover:text-error"
+          >
+            <Trash2 />
+          </Button>
+        )}
+      </div>
+    </Panel>
   );
 }

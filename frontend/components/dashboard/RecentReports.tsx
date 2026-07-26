@@ -1,21 +1,19 @@
 import Link from "next/link";
-import { cn } from "@/lib/utils";
+import { ArrowRight, Clock, FileText } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Panel, PanelHeader } from "@/components/ui/panel";
+import { IconBadge } from "@/components/ui/icon-badge";
+import { statusBadgeVariant } from "@/lib/utils";
 import type { ReportListItem } from "@/lib/types";
 
 interface RecentReportsProps {
   reports: ReportListItem[];
 }
 
-const STATUS_DOT: Record<string, string> = {
-  done: "bg-success",
-  generating: "bg-warning",
-  failed: "bg-error",
-};
-
 const STATUS_LABEL: Record<string, string> = {
-  done: "ready",
-  generating: "generating",
-  failed: "failed",
+  done: "Ready",
+  generating: "Generating",
+  failed: "Failed",
 };
 
 function formatLabel(report: ReportListItem) {
@@ -23,90 +21,78 @@ function formatLabel(report: ReportListItem) {
   if (report.pdf_ready) parts.push("PDF");
   if (report.word_ready) parts.push("DOCX");
   if (report.pptx_ready) parts.push("PPTX");
-  return parts.length > 0 ? parts.join("+") : "—";
+  return parts.length > 0 ? parts.join(" · ") : "—";
 }
 
 export function RecentReports({ reports }: RecentReportsProps) {
-  return (
-    <div>
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="font-display text-lg font-bold text-foreground">Recent Reports</h2>
-        {reports.length > 0 && (
-          <Link href="/reports" className="font-mono text-xs text-data-ink hover:underline">
-            VIEW ALL →
-          </Link>
-        )}
-      </div>
+  if (reports.length === 0) {
+    return (
+      <Panel className="flex flex-col items-center px-6 py-12 text-center">
+        <IconBadge icon={FileText} color="muted" size="xl" />
+        <p className="mt-4 text-sm font-medium text-foreground">No reports yet</p>
+        <p className="mt-1 mb-5 max-w-xs text-xs text-muted-foreground">
+          Upload a dataset and DataBrief will turn it into a narrative report.
+        </p>
+        <Link
+          href="/upload"
+          className="text-sm font-medium text-brand transition-colors hover:text-brand-hover"
+        >
+          Generate your first report →
+        </Link>
+      </Panel>
+    );
+  }
 
-      {reports.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border bg-surface p-10 text-center">
-          <p className="mb-3 font-mono text-sm text-muted-foreground">No reports yet.</p>
-          <Link href="/upload" className="font-mono text-sm text-brand hover:underline">
-            Generate your first report
+  return (
+    <Panel className="overflow-hidden">
+      <PanelHeader
+        icon={Clock}
+        title="Recent reports"
+        action={
+          <Link
+            href="/reports"
+            className="flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium text-muted-foreground transition-colors duration-150 hover:bg-surface-2 hover:text-foreground"
+          >
+            View all
+            <ArrowRight className="size-3.5" />
           </Link>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-lg border border-border bg-surface">
-          {/* Desktop table header — hidden on mobile */}
-          <div className="hidden sm:grid grid-cols-[90px_1fr_110px_90px_70px] gap-4 border-b border-border px-5 py-2.5 font-mono text-[10px] tracking-widest text-muted-foreground uppercase">
-            <span>Status</span>
-            <span>Title</span>
-            <span>Format</span>
-            <span>Date</span>
-            <span />
-          </div>
-          {reports.map((report) => (
-            <Link
-              key={report.id}
-              href={`/reports/${report.id}`}
-              className="group block border-b border-border transition-colors last:border-b-0 hover:bg-surface-2"
-            >
-              {/* Mobile card layout */}
-              <div className="flex items-start justify-between gap-3 px-4 py-3 sm:hidden">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">
-                    {report.title ?? "Untitled Report"}
-                  </p>
-                  <div className="mt-1 flex items-center gap-3 font-mono text-[10px] text-muted-foreground">
-                    <span className="flex items-center gap-1.5">
-                      <span className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[report.status])} />
-                      {STATUS_LABEL[report.status] ?? report.status}
-                    </span>
-                    <span>{formatLabel(report)}</span>
-                    <span>
-                      {new Date(report.created_at).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </span>
-                  </div>
-                </div>
-                <span className="font-mono text-xs text-data-ink shrink-0">→</span>
-              </div>
-              {/* Desktop row layout */}
-              <div className="hidden sm:grid grid-cols-[90px_1fr_110px_90px_70px] items-center gap-4 px-5 py-3">
-                <span className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
-                  <span className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[report.status])} />
-                  {STATUS_LABEL[report.status] ?? report.status}
-                </span>
-                <span className="truncate text-sm text-foreground">
-                  {report.title ?? "Untitled Report"}
-                </span>
-                <span className="font-mono text-xs text-muted-foreground">{formatLabel(report)}</span>
-                <span className="font-mono text-xs text-muted-foreground">
+        }
+      />
+
+      <div className="divide-y divide-border-soft">
+        {reports.map((report) => (
+          <Link
+            key={report.id}
+            href={`/reports/${report.id}`}
+            className="group/row flex items-center gap-3 px-5 py-3.5 transition-colors duration-150 hover:bg-surface-2"
+          >
+            <IconBadge
+              icon={FileText}
+              color={report.status === "failed" ? "error" : "brand"}
+              size="md"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-foreground">
+                {report.title ?? "Untitled report"}
+              </p>
+              <p className="mt-0.5 flex items-center gap-2 truncate font-mono text-[10px] tracking-wide text-muted-foreground uppercase">
+                <span>{formatLabel(report)}</span>
+                <span aria-hidden>·</span>
+                <span>
                   {new Date(report.created_at).toLocaleDateString(undefined, {
                     month: "short",
                     day: "numeric",
                   })}
                 </span>
-                <span className="text-right font-mono text-xs text-data-ink opacity-0 transition-opacity group-hover:opacity-100">
-                  View →
-                </span>
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
+              </p>
+            </div>
+            <Badge variant={statusBadgeVariant(report.status)} className="shrink-0">
+              {STATUS_LABEL[report.status] ?? report.status}
+            </Badge>
+            <ArrowRight className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-150 group-hover/row:opacity-100" />
+          </Link>
+        ))}
+      </div>
+    </Panel>
   );
 }

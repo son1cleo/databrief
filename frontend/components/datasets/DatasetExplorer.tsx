@@ -1,6 +1,12 @@
 "use client";
 
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { FileText, LayoutDashboard, Sparkles, Table2 } from "lucide-react";
+import {
+  FolderTab,
+  FolderTabPanel,
+  FolderTabs,
+  FolderTabsList,
+} from "@/components/ui/folder-tabs";
 import { DatasetOverview } from "./DatasetOverview";
 import { DatasetFindingsExplorer } from "./DatasetFindingsExplorer";
 import { DataPreviewTable } from "./DataPreviewTable";
@@ -15,48 +21,71 @@ interface DatasetExplorerProps {
 }
 
 export function DatasetExplorer({ insights, reports }: DatasetExplorerProps) {
+  const structured = insights.kind === "structured";
+  const findingsCount = structured
+    ? Object.values(insights.findingsByType).reduce((sum, list) => sum + list.length, 0)
+    : 0;
+
   return (
-    <Tabs defaultValue={insights.kind === "structured" ? "overview" : "text"}>
-      <TabsList>
-        {insights.kind === "structured" && <TabsTrigger value="overview">Overview</TabsTrigger>}
-        {insights.kind === "structured" && <TabsTrigger value="findings">Findings</TabsTrigger>}
-        {insights.kind === "structured" && <TabsTrigger value="data">Data</TabsTrigger>}
-        {insights.kind === "text" && <TabsTrigger value="text">Extracted text</TabsTrigger>}
-        <TabsTrigger value="reports">Reports{reports.length > 0 ? ` (${reports.length})` : ""}</TabsTrigger>
-      </TabsList>
+    <FolderTabs defaultValue={structured ? "overview" : "text"}>
+      <FolderTabsList>
+        {structured && (
+          <FolderTab value="overview" icon={LayoutDashboard}>
+            Overview
+          </FolderTab>
+        )}
+        {structured && (
+          <FolderTab value="findings" icon={Sparkles} count={findingsCount || undefined}>
+            Findings
+          </FolderTab>
+        )}
+        {structured && (
+          <FolderTab value="data" icon={Table2}>
+            Data
+          </FolderTab>
+        )}
+        {!structured && (
+          <FolderTab value="text" icon={FileText}>
+            Extracted text
+          </FolderTab>
+        )}
+        <FolderTab value="reports" icon={FileText} count={reports.length || undefined}>
+          Reports
+        </FolderTab>
+      </FolderTabsList>
 
       {insights.kind === "structured" && (
         <>
-          <TabsContent value="overview">
+          <FolderTabPanel value="overview">
             <DatasetOverview
               rowCount={insights.rowCount}
               columnCount={insights.columnCount}
               dataQuality={insights.dataQuality}
               columns={insights.columns}
             />
-          </TabsContent>
-          <TabsContent value="findings">
+          </FolderTabPanel>
+          <FolderTabPanel value="findings">
             <DatasetFindingsExplorer findingsByType={insights.findingsByType} />
-          </TabsContent>
-          <TabsContent value="data">
+          </FolderTabPanel>
+          <FolderTabPanel value="data">
             <DataPreviewTable columns={insights.preview.columns} rows={insights.preview.rows} />
-          </TabsContent>
+          </FolderTabPanel>
         </>
       )}
 
       {insights.kind === "text" && (
-        <TabsContent value="text">
+        <FolderTabPanel value="text">
           <DatasetTextPreview
             charCount={insights.charCount}
             wordCount={insights.wordCount}
             preview={insights.preview}
           />
-        </TabsContent>
+        </FolderTabPanel>
       )}
 
-      <TabsContent value="reports">
+      <FolderTabPanel value="reports">
         <DatasetReportsList reports={reports} />
-      </TabsContent>
-    </Tabs>
+      </FolderTabPanel>
+    </FolderTabs>
   );
 }

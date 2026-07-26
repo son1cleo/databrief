@@ -33,6 +33,7 @@ export function toUserOut(user: User) {
     brand_secondary: user.brandSecondary,
     brand_font: user.brandFont,
     default_pptx_theme: user.defaultPptxTheme,
+    preferred_llm_provider: user.preferredLlmProvider,
     created_at: user.createdAt.toISOString(),
   };
 }

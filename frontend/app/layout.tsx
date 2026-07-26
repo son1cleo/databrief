@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { MotionConfig } from "framer-motion";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
@@ -17,10 +18,12 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark h-full" suppressHydrationWarning>
       <body className="grid-bg min-h-full flex flex-col antialiased">
-        <TooltipProvider>
-          {children}
-          <Toaster theme="dark" />
-        </TooltipProvider>
+        <MotionConfig reducedMotion="user">
+          <TooltipProvider>
+            {children}
+            <Toaster theme="dark" />
+          </TooltipProvider>
+        </MotionConfig>
       </body>
     </html>
   );

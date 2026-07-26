@@ -36,7 +36,9 @@ export const generateReport = inngest.createFunction(
         const parsed = await step.run("parse-upload", () => parseUploadTabular(upload));
 
         const columnMeta = question
-          ? await step.run("classify-question", () => classifyQuestion(question, parsed.columns, parsed.rows))
+          ? await step.run("classify-question", () =>
+              classifyQuestion(question, parsed.columns, parsed.rows, user.preferredLlmProvider)
+            )
           : null;
 
         const built = await step.run("analyze-and-chart", () =>
@@ -50,7 +52,9 @@ export const generateReport = inngest.createFunction(
         storyArc = await step.run("build-text-story-arc", () => buildTextStoryArc(text, question));
       }
 
-      const narration = await step.run("narrate", () => narrate(storyArc, industry, question, rows));
+      const narration = await step.run("narrate", () =>
+        narrate(storyArc, industry, question, rows, user.preferredLlmProvider)
+      );
       storyArc = narration.storyArc;
 
       const title = deriveTitle(storyArc.hook);

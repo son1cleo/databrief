@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getCurrentUser, toUserOut } from "@/lib/getCurrentUser";
 import { Sidebar } from "@/components/layout/Sidebar";
-import { Navbar } from "@/components/layout/Navbar";
+import { AppHeader } from "@/components/layout/AppHeader";
 import { PageTransition } from "@/components/layout/PageTransition";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -28,13 +28,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className="flex flex-1">
-      <Sidebar />
-      <div className="flex flex-1 flex-col">
-        <Navbar user={session.user} plan={user.plan} />
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">
-          <PageTransition key={pathname}>{children}</PageTransition>
-        </main>
+    // Outer frame: the app sits inset on the darkest backdrop, so the canvas
+    // reads as a distinct surface with the nav rail resting on it.
+    <div className="flex flex-1 flex-col bg-background md:p-3">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden bg-canvas md:rounded-3xl md:border md:border-border-soft">
+        <Sidebar />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <AppHeader user={session.user} plan={user.plan} />
+          <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 md:px-6 md:pb-8">
+            <PageTransition key={pathname}>{children}</PageTransition>
+          </main>
+        </div>
       </div>
     </div>
   );
