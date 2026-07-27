@@ -7,11 +7,11 @@ import { rankFindings } from "@/lib/insight";
 import { chartForFinding } from "@/lib/charts";
 import { buildStoryArc, buildTextStoryArc, type StoryArc } from "@/lib/story";
 import { identifyRelevantColumns, generateStoryBlocks } from "@/lib/llm";
-import type { ColumnClassification } from "@/lib/llm/schemas";
+import type { ColumnClassification, StoryNarrationResult } from "@/lib/llm/schemas";
 import { renderReportPdf } from "@/lib/exports/pdf";
 import { buildWordDocument } from "@/lib/exports/word";
 import { buildPptx } from "@/lib/exports/pptx";
-import type { ExportBrand } from "@/lib/exports/types";
+import { buildDatasetLabel, type ExportBrand } from "@/lib/exports/types";
 import type { Report, Upload, User } from "@/lib/generated/prisma/client";
 
 // Step return values are round-tripped through JSON by Inngest for durable
@@ -165,33 +165,34 @@ export function analyzeAndBuildStoryArc(
   return { storyArc, findingsCount: ranked.length, rows: finalRows };
 }
 
-/** Narrates the story arc and folds the LLM's choices (hook, climax,
- * implication, action) back into the returned storyArc so every export
- * format -- including PPTX, which reads storyArc.climax/implication/action
- * directly instead of the prose blocks -- stays consistent with what was
- * actually narrated. Charts are rendered here, lazily, only for findings the
- * narration actually references (via chart blocks or the chosen climax),
- * since the LLM now sees every finding rather than a pre-rendered top 5. */
+/** Narrates the story arc and folds the LLM's climax choice (and its
+ * implication/first action, for anything that still keys off a single
+ * finding) back into the returned storyArc. Charts are rendered here,
+ * lazily, only for findings the narration actually references (via chart
+ * blocks nested inside any chapter, or the chosen climax), since the LLM
+ * sees every finding rather than a pre-rendered top 5. */
 export async function narrate(
   storyArc: StoryArc,
   industry: string | null,
   question: string | null,
   rows: Row[] | null,
   preferredProvider?: string | null
-): Promise<{ storyArc: StoryArc; blocks: import("@/lib/llm/schemas").StoryBlock[]; wordCount: number }> {
+): Promise<{ storyArc: StoryArc; narration: StoryNarrationResult }> {
   const result = await generateStoryBlocks(storyArc, industry, question, preferredProvider);
 
   const updatedArc: StoryArc = {
     ...storyArc,
     hook: result.hook,
     implication: result.implication,
-    action: result.action,
+    action: result.actions[0] ?? storyArc.action,
     climax: result.climaxIndex !== null ? (storyArc.findings[result.climaxIndex] ?? storyArc.climax) : storyArc.climax,
   };
 
   if (rows) {
     const referenced = new Set<number>();
-    for (const b of result.blocks) if (b.type === "chart") referenced.add(b.findingRef);
+    for (const chapter of result.chapters) {
+      for (const b of chapter.blocks) if (b.type === "chart") referenced.add(b.findingRef);
+    }
     if (result.climaxIndex !== null) referenced.add(result.climaxIndex);
     for (const idx of referenced) {
       const finding = updatedArc.findings[idx];
@@ -202,13 +203,13 @@ export async function narrate(
     }
   }
 
-  return { storyArc: updatedArc, blocks: result.blocks, wordCount: result.wordCount };
+  return { storyArc: updatedArc, narration: result };
 }
 
 export interface GeneratedStory {
   storyArc: StoryArc;
   findingsCount: number;
-  narration: { blocks: import("@/lib/llm/schemas").StoryBlock[]; wordCount: number };
+  narration: StoryNarrationResult;
 }
 
 /** Parses, classifies, analyzes, and narrates a structured upload, all in
@@ -250,7 +251,7 @@ export async function generateStructuredStory(
   return {
     storyArc: narrated.storyArc,
     findingsCount: built.findingsCount,
-    narration: { blocks: narrated.blocks, wordCount: narrated.wordCount },
+    narration: narrated.narration,
   };
 }
 
@@ -267,7 +268,7 @@ export async function generateTextStory(
   const text = await withTiming(reportId, "parse-upload", () => parseUploadText(upload))();
   const storyArc = await withTiming(reportId, "build-text-story-arc", () => buildTextStoryArc(text, question))();
   const narrated = await withTiming(reportId, "narrate", () => narrate(storyArc, industry, question, null, preferredProvider))();
-  return { storyArc: narrated.storyArc, narration: { blocks: narrated.blocks, wordCount: narrated.wordCount } };
+  return { storyArc: narrated.storyArc, narration: narrated.narration };
 }
 
 export function brandFor(report: ReportBrandRef, user: UserBrandRef): ExportBrand {
@@ -282,11 +283,18 @@ export function brandFor(report: ReportBrandRef, user: UserBrandRef): ExportBran
 export async function buildAndUploadPdf(
   reportId: string,
   title: string,
-  narration: { blocks: import("@/lib/llm/schemas").StoryBlock[] },
+  narration: StoryNarrationResult,
   storyArc: StoryArc,
-  brand: ExportBrand
+  brand: ExportBrand,
+  filename: string
 ): Promise<string> {
-  const buffer = await renderReportPdf({ title, blocks: narration.blocks, findings: storyArc.findings, brand });
+  const metadata = {
+    title,
+    datasetLabel: buildDatasetLabel(filename, storyArc.rowCount, storyArc.columnCount),
+    dataConfidence: storyArc.dataConfidence,
+    question: storyArc.question,
+  };
+  const buffer = await renderReportPdf({ metadata, narration, findings: storyArc.findings, brand });
   const objectKey = `reports/${reportId}/report.pdf`;
   await uploadBytes(objectKey, buffer, "application/pdf");
   return objectKey;
@@ -295,11 +303,18 @@ export async function buildAndUploadPdf(
 export async function buildAndUploadWord(
   reportId: string,
   title: string,
-  narration: { blocks: import("@/lib/llm/schemas").StoryBlock[] },
+  narration: StoryNarrationResult,
   storyArc: StoryArc,
-  brand: ExportBrand
+  brand: ExportBrand,
+  filename: string
 ): Promise<string> {
-  const buffer = await buildWordDocument({ title, blocks: narration.blocks, findings: storyArc.findings, brand });
+  const metadata = {
+    title,
+    datasetLabel: buildDatasetLabel(filename, storyArc.rowCount, storyArc.columnCount),
+    dataConfidence: storyArc.dataConfidence,
+    question: storyArc.question,
+  };
+  const buffer = await buildWordDocument({ metadata, narration, findings: storyArc.findings, brand });
   const objectKey = `reports/${reportId}/report.docx`;
   await uploadBytes(objectKey, buffer, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
   return objectKey;
@@ -308,10 +323,18 @@ export async function buildAndUploadWord(
 export async function buildAndUploadPptx(
   reportId: string,
   storyArc: StoryArc,
+  narration: StoryNarrationResult,
   theme: string | null,
-  brand: ExportBrand
+  brand: ExportBrand,
+  filename: string
 ): Promise<string> {
-  const buffer = await buildPptx({ storyArc, theme, brand });
+  const metadata = {
+    title: deriveTitle(narration.headline),
+    datasetLabel: buildDatasetLabel(filename, storyArc.rowCount, storyArc.columnCount),
+    dataConfidence: storyArc.dataConfidence,
+    question: storyArc.question,
+  };
+  const buffer = await buildPptx({ metadata, narration, storyArc, theme, brand });
   const objectKey = `reports/${reportId}/report.pptx`;
   await uploadBytes(objectKey, buffer, "application/vnd.openxmlformats-officedocument.presentationml.presentation");
   return objectKey;

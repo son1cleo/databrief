@@ -53,9 +53,9 @@ function questionHook(findings: Finding[], question: string | null | undefined):
     const outcome = (top.extra.outcome_label as string) ?? "performance";
     const peakBucket = top.extra.peak_bucket;
     if (pattern === "inverted_u" && peakBucket) {
-      return `Yes -- but only up to a point. ${titleCase(x)} peaks at ${peakBucket} usage, then hurts more than it helps`;
+      return `There's a sweet spot: ${titleCase(x)} peaks at ${peakBucket} usage, then hurts more than it helps`;
     }
-    if (pattern === "linear_positive") return `Yes -- more ${x} consistently improves ${outcome}`;
+    if (pattern === "linear_positive") return `More ${x} consistently improves ${outcome}`;
     if (pattern === "linear_negative") return `Surprisingly, more ${x} is associated with worse ${outcome}`;
     return top.description;
   }
@@ -71,7 +71,7 @@ function questionHook(findings: Finding[], question: string | null | undefined):
       return `${entity} leads in combined ${readable} with ${val.toLocaleString("en-US", { maximumFractionDigits: 0 })} total contributions`;
     }
     const col = (top.extra.col as string) ?? top.columns[top.columns.length - 1] ?? "";
-    return `${entity} has the highest ${col} in this dataset with ${val.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+    return `${entity} has the highest ${col.replace(/_/g, " ")} in this dataset with ${val.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
   }
 
   return clean[0]?.description ?? findings[0]?.description ?? "Your data has a story to tell.";
@@ -79,6 +79,77 @@ function questionHook(findings: Finding[], question: string | null | undefined):
 
 function titleCase(s: string): string {
   return s.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+const LEAD_IN_PATTERN = /^(yes|no|answer)\s*[-:]+\s*/i;
+
+/** Defensive backstop (belt-and-suspenders alongside the system prompt
+ * rules) against headline/hook text that reads like a raw LLM reply to an
+ * internal question ("Yes -- more X improves Y") rather than published
+ * report copy. Strips the lead-in and re-capitalizes what's left. */
+export function stripLeadIn(s: string): string {
+  const stripped = s.replace(LEAD_IN_PATTERN, "").trim();
+  if (!stripped) return s.trim();
+  return stripped.charAt(0).toUpperCase() + stripped.slice(1);
+}
+
+function normalizeWords(s: string): string[] {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/** True if a run of `minWords`+ consecutive words appears verbatim in both
+ * strings (e.g. "there is a sweet spot") -- a stronger signal of copy/
+ * paraphrase-anchoring than exact-string equality alone, which is what let
+ * headline/hook/chapters converge on the same clause even when the two
+ * fields weren't byte-identical. */
+function hasSharedPhrase(a: string, b: string, minWords = 3): boolean {
+  const wordsA = normalizeWords(a);
+  const wordsB = ` ${normalizeWords(b).join(" ")} `;
+  if (wordsA.length < minWords) return false;
+  for (let i = 0; i <= wordsA.length - minWords; i++) {
+    const phrase = wordsA.slice(i, i + minWords).join(" ");
+    if (wordsB.includes(` ${phrase} `)) return true;
+  }
+  return false;
+}
+
+/** If headline and hook are identical, or share a substantial verbatim
+ * phrase (3+ consecutive words -- e.g. both saying "there is a sweet
+ * spot"), derive a short distinct headline from the hook's first clause
+ * instead of displaying overlapping text in the report header. Applies to
+ * both the deterministic fallback (which only has one rule-based sentence
+ * to work with) and as a backstop against the LLM converging on similar
+ * phrasing across fields. */
+export function ensureDistinctHeadline(headline: string, hook: string): string {
+  const identical = headline.trim().toLowerCase() === hook.trim().toLowerCase();
+  if (!identical && !hasSharedPhrase(headline, hook)) return headline;
+  const firstSentence = hook.split(/(?<=[.!?])\s+/)[0] ?? hook;
+  return firstSentence.length <= 80 ? firstSentence : `${firstSentence.slice(0, 77)}...`;
+}
+
+/** Rule-based data-confidence score (0-100), never LLM-invented -- combines
+ * the mean statistical `confidence` across findings with the dataset's
+ * completeness ratio (from the `data_quality` finding, when present). Null
+ * when there are no findings to derive a score from (nothing fabricated). */
+function computeDataConfidence(findings: Finding[]): number | null {
+  if (findings.length === 0) return null;
+
+  const meanConfidence = findings.reduce((sum, f) => sum + f.confidence, 0) / findings.length;
+
+  const qualityFinding = findings.find((f) => f.type === "data_quality");
+  let completeness = 1;
+  if (qualityFinding) {
+    const missing = Number(qualityFinding.extra.missing_cells ?? 0);
+    const total = Number(qualityFinding.extra.total_cells ?? 0);
+    if (total > 0) completeness = 1 - missing / total;
+  }
+
+  const score = (meanConfidence * 0.6 + completeness * 0.4) * 100;
+  return Math.round(Math.min(100, Math.max(0, score)));
 }
 
 export interface StoryArc {
@@ -90,6 +161,11 @@ export interface StoryArc {
   action: string;
   open_question: string | null;
   question: string | null;
+  /** 0-100, rule-based (see computeDataConfidence); null when there's
+   * nothing to derive a score from (no findings / raw-text upload). */
+  dataConfidence: number | null;
+  rowCount: number | null;
+  columnCount: number | null;
   raw_text?: string;
 }
 
@@ -112,6 +188,9 @@ export function buildStoryArc(
       action: "Try uploading a richer dataset or asking a more specific question.",
       open_question: null,
       question,
+      dataConfidence: null,
+      rowCount,
+      columnCount,
     };
   }
 
@@ -135,6 +214,9 @@ export function buildStoryArc(
         ? `What's behind ${findings[1].columns.join(", ")}?`
         : null,
     question,
+    dataConfidence: computeDataConfidence(findings),
+    rowCount,
+    columnCount,
   };
 }
 
@@ -152,6 +234,9 @@ export function buildTextStoryArc(text: string, question: string | null = null):
     action: "",
     open_question: null,
     question,
+    dataConfidence: null,
+    rowCount: null,
+    columnCount: null,
     raw_text: text.slice(0, 8000),
   };
 }

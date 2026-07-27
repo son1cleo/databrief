@@ -31,7 +31,14 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
     report.pptx_ready && "PPTX",
   ].filter(Boolean) as string[];
 
-  const findingsCount = (report.story_json as { findings?: unknown[] } | null)?.findings?.length;
+  const storyJson = report.story_json as {
+    findings?: unknown[];
+    dataConfidence?: number | null;
+    question?: string | null;
+    rowCount?: number | null;
+    columnCount?: number | null;
+  } | null;
+  const findingsCount = storyJson?.findings?.length;
 
   return (
     <div className="space-y-5">
@@ -117,8 +124,12 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
 
       {report.status === "done" && (
         <ReportViewer
-          blocks={(report.story_blocks as never[]) ?? []}
-          findings={((report.story_json as { findings?: never[] } | null)?.findings as never[]) ?? []}
+          narration={(report.story_blocks as never) ?? {}}
+          findings={(storyJson?.findings as never[]) ?? []}
+          dataConfidence={storyJson?.dataConfidence ?? null}
+          question={storyJson?.question ?? null}
+          rowCount={storyJson?.rowCount ?? null}
+          columnCount={storyJson?.columnCount ?? null}
         />
       )}
     </div>

@@ -44,7 +44,7 @@ export async function runGenerateReportPipelineDirect(data: GenerateReportEventD
           title,
           hook: storyArc.hook,
           storyJson: storyArc as object,
-          storyBlocks: narration.blocks as object,
+          storyBlocks: narration as object,
           wordCount: narration.wordCount,
           findingsCount,
         },
@@ -56,12 +56,12 @@ export async function runGenerateReportPipelineDirect(data: GenerateReportEventD
     // Independent once narration is done -- run concurrently rather than
     // sequentially awaited (mirrors generateReport.ts's Inngest version).
     const [pdfPath, wordPath, pptxPath] = await Promise.all([
-      withTiming(reportId, "build-pdf", () => buildAndUploadPdf(reportId, title, narration, storyArc, brand))(),
+      withTiming(reportId, "build-pdf", () => buildAndUploadPdf(reportId, title, narration, storyArc, brand, upload.filename))(),
       formats.includes("word")
-        ? withTiming(reportId, "build-word", () => buildAndUploadWord(reportId, title, narration, storyArc, brand))()
+        ? withTiming(reportId, "build-word", () => buildAndUploadWord(reportId, title, narration, storyArc, brand, upload.filename))()
         : Promise.resolve(null),
       formats.includes("pptx")
-        ? withTiming(reportId, "build-pptx", () => buildAndUploadPptx(reportId, storyArc, report.pptxTheme, brand))()
+        ? withTiming(reportId, "build-pptx", () => buildAndUploadPptx(reportId, storyArc, narration, report.pptxTheme, brand, upload.filename))()
         : Promise.resolve(null),
     ]);
 

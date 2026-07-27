@@ -1,49 +1,47 @@
 import "server-only";
 import type { Finding } from "@/lib/analysis";
-import type { StoryArc } from "@/lib/story";
-import type { StoryBlock } from "./schemas";
-
-export function countWords(blocks: StoryBlock[]): number {
-  let count = 0;
-  for (const b of blocks) {
-    if (b.type === "heading" || b.type === "paragraph") count += b.text.split(/\s+/).filter(Boolean).length;
-    else if (b.type === "list") count += b.items.join(" ").split(/\s+/).filter(Boolean).length;
-  }
-  return count;
-}
+import { stripLeadIn, ensureDistinctHeadline, type StoryArc } from "@/lib/story";
+import { chapterForFindingType, type StoryBlock, type Chapter, type StoryNarrationResult } from "./schemas";
 
 function findingIndex(findings: Finding[], target: Finding): number {
   return findings.indexOf(target);
 }
 
+function chapterBlocks(findings: Finding[], all: Finding[], limit: number): StoryBlock[] {
+  const blocks: StoryBlock[] = [];
+  for (const f of findings.slice(0, limit)) {
+    blocks.push({ type: "paragraph", text: f.description });
+    blocks.push({ type: "chart", findingRef: findingIndex(all, f) });
+  }
+  return blocks;
+}
+
 /** Deterministic template narrator — used when no LLM provider is configured
  * or every configured provider fails, so the pipeline never hard-fails on an
- * external dependency. Ported from llm_service.py's _fallback_story_html,
- * producing structured blocks instead of HTML strings. */
-export function fallbackStoryBlocks(storyArc: StoryArc): { blocks: StoryBlock[]; wordCount: number } {
+ * external dependency. Buckets findings into the same 3-chapter shape the
+ * LLM path produces (see lib/llm.ts's normalizeChapters), just via a fixed
+ * type->chapter heuristic instead of the LLM's judgment. */
+export function fallbackNarrationResult(storyArc: StoryArc): StoryNarrationResult {
   if (storyArc.raw_text !== undefined) {
-    return fallbackTextStoryBlocks(storyArc);
+    return fallbackTextNarrationResult(storyArc);
   }
 
-  const hook = storyArc.hook || "Your data has a story to tell.";
-  const context = storyArc.context || "";
   const findings = storyArc.findings || [];
-  const implication = storyArc.implication || "";
-  const action = storyArc.action || "";
-  const openQuestion = storyArc.open_question;
-  const question = storyArc.question;
-
-  const blocks: StoryBlock[] = [{ type: "heading", level: 1, text: hook }];
-
-  if (question) {
-    blocks.push({ type: "paragraph", text: `Answering: "${question}"` });
-  }
-  blocks.push({ type: "paragraph", text: context });
+  const climaxIdx = storyArc.climax ? findings.indexOf(storyArc.climax) : -1;
 
   const combinedRankings = findings.filter((f) => f.type === "ranking" && f.extra.is_combined);
-  const individualRankings = findings.filter((f) => f.type === "ranking" && !f.extra.is_combined);
-  const otherFindings = findings.filter((f) => f.type !== "ranking");
 
+  const macroTrend = chapterBlocks(
+    findings.filter((f) => chapterForFindingType(f.type) === "macro_trend"),
+    findings,
+    3
+  );
+  const anomalies = chapterBlocks(
+    findings.filter((f) => chapterForFindingType(f.type) === "anomalies"),
+    findings,
+    3
+  );
+  const correlatedDrivers: StoryBlock[] = [];
   if (combinedRankings.length > 0) {
     const top = combinedRankings[0];
     const topEntity = String(top.extra.top_entity ?? "");
@@ -51,92 +49,77 @@ export function fallbackStoryBlocks(storyArc: StoryArc): { blocks: StoryBlock[];
     const combinedCols = (top.extra.combined_cols as string[]) ?? [];
     const leaderboard = (top.extra.leaderboard as Record<string, number>) ?? {};
     const colsReadable = combinedCols.map((c) => c.replace(/_/g, " ").replace("tournament", "").trim()).join(" and ");
-
-    blocks.push({ type: "heading", level: 2, text: "The Headline" });
-    blocks.push({
+    correlatedDrivers.push({
       type: "paragraph",
       text: `${topEntity} comes out on top when measuring ${colsReadable} combined, accumulating ${Math.round(topValue).toLocaleString("en-US")} total contributions.`,
     });
     const entries = Object.entries(leaderboard).slice(0, 5);
     if (entries.length > 0) {
-      blocks.push({ type: "heading", level: 2, text: "The Full Leaderboard" });
-      blocks.push({
+      correlatedDrivers.push({
         type: "list",
         items: entries.map(([name, val]) => `${name} -- ${Math.round(val).toLocaleString("en-US")} contributions`),
       });
     }
-    blocks.push({ type: "chart", findingRef: findingIndex(findings, top) });
+    correlatedDrivers.push({ type: "chart", findingRef: findingIndex(findings, top) });
   }
+  correlatedDrivers.push(
+    ...chapterBlocks(
+      findings.filter((f) => f.type === "correlation" || f.type === "dose_response" || (f.type === "ranking" && !f.extra.is_combined)),
+      findings,
+      3
+    )
+  );
+  const chapters: Chapter[] = [
+    { id: "macro_trend", title: "Chapter I — The Macro Trend", blocks: macroTrend },
+    { id: "anomalies", title: "Chapter II — Anomalies & Outliers", blocks: anomalies },
+    { id: "correlated_drivers", title: "Chapter III — Correlated Drivers", blocks: correlatedDrivers },
+  ];
 
-  if (individualRankings.length > 0) {
-    blocks.push({ type: "heading", level: 2, text: "Breaking It Down" });
-    for (const f of individualRankings.slice(0, 3)) {
-      const topEntity = String(f.extra.top_entity ?? "");
-      const col = String(f.extra.col ?? "")
-        .replace(/_/g, " ")
-        .replace("tournament", "")
-        .trim();
-      const leaderboard = (f.extra.leaderboard as Record<string, number>) ?? {};
-      const items = Object.entries(leaderboard);
-      if (items.length > 0) {
-        const rest = items
-          .slice(1, 3)
-          .map(([n, v]) => `${n} (${Math.round(v).toLocaleString("en-US")})`)
-          .join(", ");
-        blocks.push({
-          type: "paragraph",
-          text: `${topEntity} leads in ${col}` + (rest ? `, followed by ${rest}.` : "."),
-        });
-        blocks.push({ type: "chart", findingRef: findingIndex(findings, f) });
-      }
-    }
-  }
-
-  if (combinedRankings.length === 0 && individualRankings.length === 0 && otherFindings.length > 0) {
-    blocks.push({ type: "heading", level: 2, text: "What the data shows" });
-    for (const f of otherFindings.slice(0, 5)) {
-      blocks.push({ type: "paragraph", text: f.description });
-      blocks.push({ type: "chart", findingRef: findingIndex(findings, f) });
-    }
-  } else if (otherFindings.length > 0) {
-    blocks.push({ type: "heading", level: 2, text: "What else the data shows" });
-    for (const f of otherFindings.slice(0, 3)) {
-      blocks.push({ type: "paragraph", text: f.description });
-      blocks.push({ type: "chart", findingRef: findingIndex(findings, f) });
-    }
-  }
-
-  if (implication) {
-    blocks.push({ type: "heading", level: 2, text: "What this means" });
-    blocks.push({ type: "paragraph", text: implication });
-  }
-  if (action) {
-    blocks.push({ type: "heading", level: 2, text: "What to do next" });
-    blocks.push({ type: "paragraph", text: action });
-  }
-  if (openQuestion) {
-    blocks.push({ type: "heading", level: 2, text: "Worth investigating" });
-    blocks.push({ type: "paragraph", text: openQuestion });
-  }
-
-  return { blocks, wordCount: countWords(blocks) };
+  const hook = stripLeadIn(storyArc.hook);
+  return {
+    headline: ensureDistinctHeadline(hook, hook),
+    hook,
+    climaxIndex: climaxIdx >= 0 ? climaxIdx : null,
+    chapters,
+    focusQuestionCallout: storyArc.question && storyArc.open_question ? storyArc.open_question : null,
+    implication: storyArc.implication,
+    // Only one rule-based action exists without an LLM to generate 3
+    // distinct pillars -- return what's real (0 or 1) rather than padding
+    // with duplicate text that would read as an obvious bug in the report.
+    actions: storyArc.action ? [storyArc.action] : [],
+    wordCount: countWordsInChapters(chapters),
+  };
 }
 
-function fallbackTextStoryBlocks(storyArc: StoryArc): { blocks: StoryBlock[]; wordCount: number } {
-  const hook = storyArc.hook || "Here's what's in this document.";
-  const context = storyArc.context || "";
-  const question = storyArc.question;
+function fallbackTextNarrationResult(storyArc: StoryArc): StoryNarrationResult {
+  const hook = stripLeadIn(storyArc.hook || "Here's what stood out in this document.");
   const snippet = (storyArc.raw_text || "").slice(0, 1500);
 
-  const blocks: StoryBlock[] = [
-    { type: "heading", level: 1, text: hook },
-    { type: "paragraph", text: context },
+  const chapters: Chapter[] = [
+    { id: "macro_trend", title: "Chapter I — The Macro Trend", blocks: [{ type: "paragraph", text: storyArc.context || "" }] },
+    { id: "anomalies", title: "Chapter II — Anomalies & Outliers", blocks: [{ type: "paragraph", text: snippet }] },
+    { id: "correlated_drivers", title: "Chapter III — Correlated Drivers", blocks: [] },
   ];
-  if (question) {
-    blocks.push({ type: "paragraph", text: `In answer to: "${question}"` });
-  }
-  blocks.push({ type: "heading", level: 2, text: "Excerpt" });
-  blocks.push({ type: "paragraph", text: snippet });
 
-  return { blocks, wordCount: countWords(blocks) };
+  return {
+    headline: ensureDistinctHeadline(hook, hook),
+    hook,
+    climaxIndex: null,
+    chapters,
+    focusQuestionCallout: storyArc.question ? `In answer to: "${storyArc.question}"` : null,
+    implication: storyArc.implication,
+    actions: [],
+    wordCount: countWordsInChapters(chapters),
+  };
+}
+
+function countWordsInChapters(chapters: Chapter[]): number {
+  let count = 0;
+  for (const ch of chapters) {
+    for (const b of ch.blocks) {
+      if (b.type === "heading" || b.type === "paragraph") count += b.text.split(/\s+/).filter(Boolean).length;
+      else if (b.type === "list") count += b.items.join(" ").split(/\s+/).filter(Boolean).length;
+    }
+  }
+  return count;
 }

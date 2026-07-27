@@ -64,7 +64,7 @@ export const generateReport = inngest.createFunction(
               title,
               hook: storyArc.hook,
               storyJson: storyArc as object,
-              storyBlocks: narration.blocks as object,
+              storyBlocks: narration as object,
               wordCount: narration.wordCount,
               findingsCount,
             },
@@ -80,18 +80,18 @@ export const generateReport = inngest.createFunction(
       const [pdfPath, wordPath, pptxPath] = await Promise.all([
         step.run(
           "build-pdf",
-          withTiming(reportId, "build-pdf", () => buildAndUploadPdf(reportId, title, narration, storyArc, brand))
+          withTiming(reportId, "build-pdf", () => buildAndUploadPdf(reportId, title, narration, storyArc, brand, upload.filename))
         ),
         formats.includes("word")
           ? step.run(
               "build-word",
-              withTiming(reportId, "build-word", () => buildAndUploadWord(reportId, title, narration, storyArc, brand))
+              withTiming(reportId, "build-word", () => buildAndUploadWord(reportId, title, narration, storyArc, brand, upload.filename))
             )
           : Promise.resolve(null),
         formats.includes("pptx")
           ? step.run(
               "build-pptx",
-              withTiming(reportId, "build-pptx", () => buildAndUploadPptx(reportId, storyArc, report.pptxTheme, brand))
+              withTiming(reportId, "build-pptx", () => buildAndUploadPptx(reportId, storyArc, narration, report.pptxTheme, brand, upload.filename))
             )
           : Promise.resolve(null),
       ]);

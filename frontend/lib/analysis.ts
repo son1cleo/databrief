@@ -196,6 +196,13 @@ function isChangeCol(col: string): boolean {
   return col.startsWith("change_");
 }
 
+/** Raw column names (snake_case with underscores) must never reach narrated
+ * text -- only the internal `columns`/`extra` keys keep the raw form so
+ * downstream code can still match against the actual data. */
+function readable(col: string): string {
+  return col.replace(/_/g, " ");
+}
+
 // ---------------------------------------------------------------------------
 // Finding generators
 // ---------------------------------------------------------------------------
@@ -214,7 +221,7 @@ function descriptiveFindings(rows: Row[], numericCols: string[]): Finding[] {
       makeFinding({
         type: "descriptive",
         columns: [col],
-        description: `${col} ranges from ${fmt(min)} to ${fmt(max)}, averaging ${fmt(m)}.`,
+        description: `${readable(col)} ranges from ${fmt(min)} to ${fmt(max)}, averaging ${fmt(m)}.`,
         value: m,
         magnitude: cv / 2,
         confidence: series.length / 50,
@@ -264,7 +271,7 @@ function trendFindings(rows: Row[], numericCols: string[], dateCols: string[]): 
       makeFinding({
         type: "trend",
         columns: [col, dateCol],
-        description: `${col} ${direction} by ${fmt(Math.abs(pctChange), 1)}% over the observed period (by ${dateCol}).`,
+        description: `${readable(col)} ${direction} by ${fmt(Math.abs(pctChange), 1)}% over the observed period (by ${readable(dateCol)}).`,
         value: pctChange,
         magnitude: Math.abs(pctChange) / 100,
         confidence: Math.max(rSquared, 0),
@@ -302,7 +309,7 @@ function outlierFindings(rows: Row[], numericCols: string[], labelCol: string | 
       makeFinding({
         type: "outlier",
         columns: [col],
-        description: `${col} has ${outliers.length} outlier${outliers.length !== 1 ? "s" : ""} (${(pctOfData * 100).toFixed(1)}% of values); the most extreme is ${fmt(mostExtreme.v)}${label}.`,
+        description: `${readable(col)} has ${outliers.length} outlier${outliers.length !== 1 ? "s" : ""} (${(pctOfData * 100).toFixed(1)}% of values); the most extreme is ${fmt(mostExtreme.v)}${label}.`,
         value: mostExtreme.v,
         magnitude: Math.abs(mostExtreme.v - med) / (iqr || 1) / 4,
         confidence: 1.0 - pctOfData,
@@ -345,7 +352,7 @@ function correlationFindings(rows: Row[], numericCols: string[]): Finding[] {
         makeFinding({
           type: "correlation",
           columns: [colA, colB],
-          description: `${colA} and ${colB} are ${direction} correlated (r=${r.toFixed(2)}).`,
+          description: `${readable(colA)} and ${readable(colB)} are ${direction} correlated (r=${r.toFixed(2)}).`,
           value: r,
           magnitude: Math.abs(r),
           confidence: n / 30,
@@ -369,7 +376,7 @@ function distributionFindings(rows: Row[], numericCols: string[]): Finding[] {
       makeFinding({
         type: "distribution",
         columns: [col],
-        description: `${col} is heavily ${direction}-skewed (skew=${skew.toFixed(2)}), meaning a small number of ${skew > 0 ? "large" : "small"} values dominate.`,
+        description: `${readable(col)} is heavily ${direction}-skewed (skew=${skew.toFixed(2)}), meaning a small number of ${skew > 0 ? "large" : "small"} values dominate.`,
         value: skew,
         magnitude: Math.abs(skew) / 3,
         confidence: series.length / 50,
@@ -581,15 +588,16 @@ function doseResponseFindings(
       pattern = "general";
     }
 
-    const outcomeLabel = usedPrePost ? `${yCol.replace(/_/g, " ")} change (vs pre)` : yCol.replace(/_/g, " ");
+    const xReadable = readable(xCol);
+    const outcomeLabel = usedPrePost ? `${readable(yCol)} change (vs pre)` : readable(yCol);
     const patternDescs: Record<string, string> = {
       inverted_u: `there is a sweet spot -- outcome peaks at ${peakBucket} usage then declines`,
-      linear_positive: "more X consistently associates with better outcome",
-      linear_negative: "more X consistently associates with worse outcome",
+      linear_positive: `more ${xReadable} consistently associates with better outcome`,
+      linear_negative: `more ${xReadable} consistently associates with worse outcome`,
       general: "no clear directional pattern detected",
     };
     const bucketStr = keys.map((k) => `${k}: ${bins[k] >= 0 ? "+" : ""}${bins[k].toFixed(3)}`).join(", ");
-    const description = `When examining how ${xCol.replace(/_/g, " ")} affects ${outcomeLabel}, ${patternDescs[pattern]}. By usage level: ${bucketStr}.`;
+    const description = `When examining how ${xReadable} affects ${outcomeLabel}, ${patternDescs[pattern]}. By usage level: ${bucketStr}.`;
 
     findings.push(
       makeFinding({
@@ -651,7 +659,7 @@ function comparisonFindings(rows: Row[], relevantCols: string[], numericCols: st
         makeFinding({
           type: "ranking",
           columns: [catCol, metricCol],
-          description: `${best.key} has the highest average ${metricCol} (${fmt(best.mean)}). Top groups: ${leaderboardStr}.`,
+          description: `${best.key} has the highest average ${readable(metricCol)} (${fmt(best.mean)}). Top groups: ${leaderboardStr}.`,
           value: best.mean,
           magnitude: 0.92,
           confidence: 0.85,
@@ -725,7 +733,7 @@ function rankingFindings(
       const top5 = topN(combined, 5);
       const [topEntity, topValue] = top5[0];
       const leaderboardStr = top5.map(([name, val]) => `${name} (${fmt(val, 0)})`).join(", ");
-      const combinedLabel = numericRelevant.join(" + ");
+      const combinedLabel = numericRelevant.map(readable).join(" + ");
       findings.push(
         makeFinding({
           type: "ranking",
@@ -756,7 +764,7 @@ function rankingFindings(
       makeFinding({
         type: "ranking",
         columns: [labelCol, col],
-        description: `${topEntity} leads in ${col} with ${fmt(topValue, 0)}. Top 5: ${leaderboardStr}.`,
+        description: `${topEntity} leads in ${readable(col)} with ${fmt(topValue, 0)}. Top 5: ${leaderboardStr}.`,
         value: topValue,
         magnitude: 0.95,
         confidence: 0.95,
