@@ -7,6 +7,10 @@ import {
   DeleteObjectCommand,
   DeleteObjectsCommand,
   ListObjectsV2Command,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
@@ -220,6 +224,81 @@ export async function downloadBytes(objectKey: string, deadlineMs?: number): Pro
     `downloading ${objectKey}`,
     deadlineMs
   );
+}
+
+export interface CompletedPart {
+  partNumber: number;
+  etag: string;
+}
+
+/** Starts an S3 multipart upload and returns the storage-assigned UploadId.
+ * That id (plus the per-part ETags collected as parts land) is the only
+ * state a multipart upload needs -- storage tracks it server-side, so none
+ * of this needs a database row. */
+export async function createMultipartUpload(objectKey: string, contentType: string): Promise<string> {
+  const res = await withDeadline(
+    (abortSignal) =>
+      client().send(
+        new CreateMultipartUploadCommand({ Bucket: bucket(), Key: objectKey, ContentType: contentType }),
+        { abortSignal }
+      ),
+    `starting multipart upload for ${objectKey}`,
+    METADATA_DEADLINE_MS
+  );
+  if (!res.UploadId) throw new Error(`No UploadId returned for ${objectKey}`);
+  return res.UploadId;
+}
+
+/** Presigned URL for a single part PUT. The browser uploads part bytes
+ * directly to storage, same as the existing single-shot presignedUploadUrl,
+ * just scoped to one part of a larger object. */
+export async function presignedUploadPartUrl(
+  objectKey: string,
+  uploadId: string,
+  partNumber: number,
+  expiry: number = PRESIGNED_URL_EXPIRY
+): Promise<string> {
+  const command = new UploadPartCommand({
+    Bucket: bucket(),
+    Key: objectKey,
+    UploadId: uploadId,
+    PartNumber: partNumber,
+  });
+  return getSignedUrl(client(), command, { expiresIn: expiry });
+}
+
+/** Assembles the uploaded parts into the final object. Parts must be listed
+ * in ascending PartNumber order. */
+export async function completeMultipartUpload(
+  objectKey: string,
+  uploadId: string,
+  parts: CompletedPart[]
+): Promise<void> {
+  await withDeadline(
+    (abortSignal) =>
+      client().send(
+        new CompleteMultipartUploadCommand({
+          Bucket: bucket(),
+          Key: objectKey,
+          UploadId: uploadId,
+          MultipartUpload: {
+            Parts: parts
+              .sort((a, b) => a.partNumber - b.partNumber)
+              .map((p) => ({ PartNumber: p.partNumber, ETag: p.etag })),
+          },
+        }),
+        { abortSignal }
+      ),
+    `completing multipart upload for ${objectKey}`,
+    METADATA_DEADLINE_MS
+  );
+}
+
+/** Cancels an in-progress multipart upload and releases the parts already
+ * uploaded, so a client that gives up (exhausted retries, user cancels)
+ * doesn't leave an orphaned incomplete upload sitting in storage. */
+export async function abortMultipartUpload(objectKey: string, uploadId: string): Promise<void> {
+  await client().send(new AbortMultipartUploadCommand({ Bucket: bucket(), Key: objectKey, UploadId: uploadId }));
 }
 
 export async function deleteObject(objectKey: string): Promise<void> {

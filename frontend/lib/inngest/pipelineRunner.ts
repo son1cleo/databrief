@@ -1,19 +1,16 @@
 import "server-only";
 import { prisma } from "@/lib/db";
-import { buildTextStoryArc } from "@/lib/story";
 import type { GenerateReportEventData } from "./client";
 import {
   loadReportMetadata,
-  parseUploadTabular,
-  parseUploadText,
-  classifyQuestion,
-  analyzeAndBuildStoryArc,
-  narrate,
+  generateStructuredStory,
+  generateTextStory,
   brandFor,
   deriveTitle,
   buildAndUploadPdf,
   buildAndUploadWord,
   buildAndUploadPptx,
+  withTiming,
 } from "./pipeline";
 
 const STRUCTURED_TYPES = new Set(["structured", "semi_structured"]);
@@ -28,50 +25,49 @@ export async function runGenerateReportPipelineDirect(data: GenerateReportEventD
   const { reportId, industry, question, formats } = data;
 
   try {
-    const { report, upload, user } = await loadReportMetadata(reportId);
+    const { report, upload, user } = await withTiming(reportId, "load-metadata", () => loadReportMetadata(reportId))();
     const isStructured = STRUCTURED_TYPES.has(upload.dataType ?? "");
 
-    let storyArc;
-    let findingsCount = 0;
-    let rows: Awaited<ReturnType<typeof parseUploadTabular>>["rows"] | null = null;
+    const { storyArc, findingsCount, narration } = isStructured
+      ? await generateStructuredStory(reportId, upload, question, industry, user.preferredLlmProvider)
+      : {
+          ...(await generateTextStory(reportId, upload, question, industry, user.preferredLlmProvider)),
+          findingsCount: 0,
+        };
 
-    if (isStructured) {
-      const parsed = await parseUploadTabular(upload);
-      const columnMeta = question
-        ? await classifyQuestion(question, parsed.columns, parsed.rows, user.preferredLlmProvider)
-        : null;
-      const built = analyzeAndBuildStoryArc(parsed.rows, parsed.columns, question, columnMeta);
-      storyArc = built.storyArc;
-      findingsCount = built.findingsCount;
-      rows = built.rows;
-    } else {
-      const text = await parseUploadText(upload);
-      storyArc = buildTextStoryArc(text, question);
-    }
-
-    const narration = await narrate(storyArc, industry, question, rows, user.preferredLlmProvider);
-    storyArc = narration.storyArc;
     const title = deriveTitle(storyArc.hook);
 
-    await prisma.report.update({
-      where: { id: reportId },
-      data: {
-        title,
-        hook: storyArc.hook,
-        storyJson: storyArc as object,
-        storyBlocks: narration.blocks as object,
-        wordCount: narration.wordCount,
-        findingsCount,
-      },
-    });
+    await withTiming(reportId, "save-narration", () =>
+      prisma.report.update({
+        where: { id: reportId },
+        data: {
+          title,
+          hook: storyArc.hook,
+          storyJson: storyArc as object,
+          storyBlocks: narration.blocks as object,
+          wordCount: narration.wordCount,
+          findingsCount,
+        },
+      })
+    )();
 
     const brand = brandFor(report, user);
 
-    const pdfPath = await buildAndUploadPdf(reportId, title, narration, storyArc, brand);
-    const wordPath = formats.includes("word") ? await buildAndUploadWord(reportId, title, narration, storyArc, brand) : null;
-    const pptxPath = formats.includes("pptx") ? await buildAndUploadPptx(reportId, storyArc, report.pptxTheme, brand) : null;
+    // Independent once narration is done -- run concurrently rather than
+    // sequentially awaited (mirrors generateReport.ts's Inngest version).
+    const [pdfPath, wordPath, pptxPath] = await Promise.all([
+      withTiming(reportId, "build-pdf", () => buildAndUploadPdf(reportId, title, narration, storyArc, brand))(),
+      formats.includes("word")
+        ? withTiming(reportId, "build-word", () => buildAndUploadWord(reportId, title, narration, storyArc, brand))()
+        : Promise.resolve(null),
+      formats.includes("pptx")
+        ? withTiming(reportId, "build-pptx", () => buildAndUploadPptx(reportId, storyArc, report.pptxTheme, brand))()
+        : Promise.resolve(null),
+    ]);
 
-    await prisma.report.update({ where: { id: reportId }, data: { pdfPath, wordPath, pptxPath, status: "done" } });
+    await withTiming(reportId, "mark-done", () =>
+      prisma.report.update({ where: { id: reportId }, data: { pdfPath, wordPath, pptxPath, status: "done" } })
+    )();
   } catch (err) {
     const message = err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500);
     await prisma.report

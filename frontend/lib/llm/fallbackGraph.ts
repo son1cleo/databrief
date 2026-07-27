@@ -14,6 +14,28 @@ const GraphState = Annotation.Root({
 
 export type FallbackResult<T> = { result: T; provider: string } | { result: null; providerErrors: string[] };
 
+// Applied uniformly at the call site rather than relying on each provider
+// SDK's own timeout option (Groq/OpenAI expose `timeout`, Mistral's client
+// doesn't) -- a stalled provider is forced to fail over to the next one
+// instead of hanging the whole report indefinitely.
+const PROVIDER_CALL_TIMEOUT_MS = 25_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 /** Tries each provider in order via structured output (tool-calling under the
  * hood), stopping at the first success. Each provider attempt is a node in a
  * small LangGraph state machine — a transient failure on one provider (rate
@@ -36,10 +58,11 @@ export async function runWithFallback<T>(
     builder.addNode(provider.name, async (state: typeof GraphState.State) => {
       try {
         const structured = provider.model.withStructuredOutput(schema);
-        const result = await structured.invoke([
-          new SystemMessage(state.systemPrompt),
-          new HumanMessage(state.userMessage),
-        ]);
+        const result = await withTimeout(
+          structured.invoke([new SystemMessage(state.systemPrompt), new HumanMessage(state.userMessage)]),
+          PROVIDER_CALL_TIMEOUT_MS,
+          provider.name
+        );
         return { result, providerUsed: provider.name };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

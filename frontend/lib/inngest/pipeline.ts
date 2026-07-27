@@ -23,6 +23,21 @@ type UploadFileRef = Pick<Upload, "storagePath" | "fileType">;
 type ReportBrandRef = Pick<Report, "isBranded">;
 type UserBrandRef = Pick<User, "brandPrimary" | "brandLogoUrl" | "brandFont">;
 
+// Cheap per-step timing so real numbers are available (in logs, and in
+// Inngest's own Runs tab) instead of guessing where report-generation time
+// actually goes. Wraps the callback passed to step.run/direct invocation
+// rather than the step call itself, so it measures actual work time.
+export function withTiming<T>(reportId: string, label: string, fn: () => T | Promise<T>): () => Promise<T> {
+  return async () => {
+    const start = Date.now();
+    try {
+      return await fn();
+    } finally {
+      console.log(`[timing] report=${reportId} step=${label} ms=${Date.now() - start}`);
+    }
+  };
+}
+
 export function deriveTitle(hook: string): string {
   const title = hook.trim().replace(/\.+$/, "");
   return title.length <= 70 ? title : `${title.slice(0, 67)}...`;
@@ -113,6 +128,13 @@ export function addChangeColumns(
   return { rows: nextRows, columns: nextColumns, relevantCols: nextRelevantCols };
 }
 
+// Upper bound on findings handed to the LLM for climax selection/narration.
+// correlationFindings() is O(columns^2), so an uncapped list scales with
+// dataset width, not row count -- bounding it keeps the narration prompt
+// (and thus its latency) predictable regardless of how many columns a
+// dataset has, while still giving the LLM far more range than a fixed top-5.
+const MAX_FINDINGS_FOR_NARRATION = 40;
+
 export function analyzeAndBuildStoryArc(
   rows: Row[],
   columns: string[],
@@ -133,11 +155,12 @@ export function analyzeAndBuildStoryArc(
     independentVar: columnMeta?.independent_var ?? null,
     dependentVar: columnMeta?.dependent_var ?? null,
   });
-  // Every finding goes to the story arc (and the LLM) so it can pick the best
-  // narrative climax itself, not just the highest insight.ts score -- charts
-  // are rendered lazily in narrate() only for whichever findings end up
-  // referenced, so this doesn't mean rendering a chart per finding here.
-  const ranked = rankFindings(findings, findings.length, relevantCols);
+  // Every finding up to MAX_FINDINGS_FOR_NARRATION goes to the story arc (and
+  // the LLM) so it can pick the best narrative climax itself, not just the
+  // highest insight.ts score -- charts are rendered lazily in narrate() only
+  // for whichever findings end up referenced, so this doesn't mean rendering
+  // a chart per finding here.
+  const ranked = rankFindings(findings, MAX_FINDINGS_FOR_NARRATION, relevantCols);
   const storyArc = buildStoryArc(ranked, finalRows.length, finalColumns.length, finalColumns, question);
   return { storyArc, findingsCount: ranked.length, rows: finalRows };
 }
@@ -180,6 +203,71 @@ export async function narrate(
   }
 
   return { storyArc: updatedArc, blocks: result.blocks, wordCount: result.wordCount };
+}
+
+export interface GeneratedStory {
+  storyArc: StoryArc;
+  findingsCount: number;
+  narration: { blocks: import("@/lib/llm/schemas").StoryBlock[]; wordCount: number };
+}
+
+/** Parses, classifies, analyzes, and narrates a structured upload, all in
+ * one call. This MUST stay a single Inngest step (not split across several
+ * step.run calls) -- Inngest checkpoints every step's return value as
+ * durable run state, and the raw parsed rows (parsed.rows / built.rows) can
+ * easily be many MB for a real dataset, which blows past Inngest's run state
+ * size limit ("run state size limit exceeded") if they're ever returned from
+ * a step. Keeping rows in this function's local scope means they never cross
+ * a step boundary at all -- only the final, much smaller narrated result
+ * does. The tradeoff: a failed narrate() call retries the whole thing
+ * (re-parse + re-analyze), not just narration, since there's no
+ * checkpoint between the sub-phases anymore. Sub-phases are still
+ * individually timed via withTiming for visibility, just not as separate
+ * durable Inngest steps. */
+export async function generateStructuredStory(
+  reportId: string,
+  upload: UploadFileRef,
+  question: string | null,
+  industry: string | null,
+  preferredProvider?: string | null
+): Promise<GeneratedStory> {
+  const parsed = await withTiming(reportId, "parse-upload", () => parseUploadTabular(upload))();
+
+  const columnMeta = question
+    ? await withTiming(reportId, "classify-question", () =>
+        classifyQuestion(question, parsed.columns, parsed.rows, preferredProvider)
+      )()
+    : null;
+
+  const built = await withTiming(reportId, "analyze-and-chart", () =>
+    analyzeAndBuildStoryArc(parsed.rows, parsed.columns, question, columnMeta)
+  )();
+
+  const narrated = await withTiming(reportId, "narrate", () =>
+    narrate(built.storyArc, industry, question, built.rows, preferredProvider)
+  )();
+
+  return {
+    storyArc: narrated.storyArc,
+    findingsCount: built.findingsCount,
+    narration: { blocks: narrated.blocks, wordCount: narrated.wordCount },
+  };
+}
+
+/** Same reasoning as generateStructuredStory -- kept as one step so no large
+ * intermediate value (here, the raw document text) is ever returned from a
+ * step.run call. */
+export async function generateTextStory(
+  reportId: string,
+  upload: UploadFileRef,
+  question: string | null,
+  industry: string | null,
+  preferredProvider?: string | null
+): Promise<Omit<GeneratedStory, "findingsCount">> {
+  const text = await withTiming(reportId, "parse-upload", () => parseUploadText(upload))();
+  const storyArc = await withTiming(reportId, "build-text-story-arc", () => buildTextStoryArc(text, question))();
+  const narrated = await withTiming(reportId, "narrate", () => narrate(storyArc, industry, question, null, preferredProvider))();
+  return { storyArc: narrated.storyArc, narration: { blocks: narrated.blocks, wordCount: narrated.wordCount } };
 }
 
 export function brandFor(report: ReportBrandRef, user: UserBrandRef): ExportBrand {
