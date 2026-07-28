@@ -37,14 +37,54 @@ export function chapterForFindingType(type: string): ChapterId {
   return "correlated_drivers"; // correlation, dose_response, ranking (as a supporting finding)
 }
 
+const citedFindingIndicesField = z
+  .array(z.number().int())
+  .describe(
+    "0-based indices (from the findings catalog you were given) of every finding this section discusses or cites a number from. Used so later sections know what's already been covered -- list every one you actually used, don't omit any."
+  );
+
 export const chapterSchema = z.object({
   id: z.enum(CHAPTER_IDS),
   title: z.string().describe('Chapter heading, e.g. "Chapter I — The Macro Trend"'),
   blocks: z
     .array(storyBlockSchema)
     .describe("This chapter's content. Keep brief (even a single short paragraph) rather than fabricate content if the dataset has nothing genuinely relevant to this chapter."),
+  citedFindingIndices: citedFindingIndicesField,
 });
 export type Chapter = z.infer<typeof chapterSchema>;
+
+// Per-turn schemas for the multi-turn narration agent (lib/llm/narrationAgent.ts).
+// Each turn produces one slice of StoryNarrationResult instead of one call
+// producing the whole thing -- see narrationAgent.ts for why (repetition
+// across sections was the evidenced bug; each turn now sees what earlier
+// turns already wrote).
+export const climaxHookSchema = z.object({
+  climaxIndex: z
+    .number()
+    .int()
+    .nullable()
+    .describe(
+      "0-based index into the findings catalog of whichever finding is genuinely the best story here (most surprising/consequential), not necessarily the highest-magnitude one. Null if there are no findings or nothing stands out."
+    ),
+  headline: z.string().describe("A punchy, journalistic title summarizing the central takeaway -- distinct from the hook, more like a newspaper headline"),
+  hook: z.string().describe("A 3-sentence narrative opening establishing the core tension or discovery, grounded in the climax finding's actual numbers"),
+  citedFindingIndices: citedFindingIndicesField,
+});
+export type ClimaxHookTurn = z.infer<typeof climaxHookSchema>;
+
+export const calloutSchema = z.object({
+  focusQuestionCallout: z.string().describe("A direct answer to the user's focus question, citing real numbers."),
+  citedFindingIndices: citedFindingIndicesField,
+});
+export type CalloutTurn = z.infer<typeof calloutSchema>;
+
+export const actionsSchema = z.object({
+  actions: z
+    .array(z.string())
+    .describe("Exactly 3 concrete, prescriptive next steps ('action pillars'), each grounded in a specific finding's actual numbers"),
+  citedFindingIndices: citedFindingIndicesField,
+});
+export type ActionsTurn = z.infer<typeof actionsSchema>;
 
 export const storyNarrationSchema = z.object({
   headline: z.string().describe("A punchy, journalistic title summarizing the central takeaway -- distinct from the hook, more like a newspaper headline"),
