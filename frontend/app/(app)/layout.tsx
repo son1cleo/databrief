@@ -28,17 +28,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    // Outer frame: the app sits inset on the darkest backdrop, so the canvas
-    // reads as a distinct surface with the nav rail resting on it.
+    // Outer frame: the app sits inset on the darkest backdrop, so the rail and
+    // the content panel read as two separate surfaces floating on it.
     <div className="flex flex-1 flex-col bg-background md:p-3">
-      <div className="relative flex min-h-0 flex-1 overflow-hidden bg-canvas md:rounded-3xl md:border md:border-border-soft">
-        <Sidebar />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <AppHeader user={session.user} plan={user.plan} />
-          <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 md:px-6 md:pb-8">
-            <PageTransition key={pathname}>{children}</PageTransition>
-          </main>
-        </div>
+      <Sidebar />
+      {/* ml clears the fixed rail (left-3 + w-16) plus the same gap again. */}
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-canvas md:ml-19 md:rounded-3xl md:border md:border-border-soft">
+        <AppHeader user={session.user} plan={user.plan} />
+        <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 md:px-6 md:pb-8">
+          <PageTransition key={pathname}>{children}</PageTransition>
+        </main>
       </div>
     </div>
   );
