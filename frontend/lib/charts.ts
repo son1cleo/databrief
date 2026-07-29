@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { Resvg } from "@resvg/resvg-js";
 import { mean, sampleStd, quantile, median, linearRegression, type Finding, type Row } from "@/lib/analysis";
+import type { ChartData } from "@/lib/chartData";
 
 const ACCENT = "#2563eb";
 const ACCENT_LIGHT = "#93c5fd";
@@ -125,6 +126,49 @@ function areaPathD(points: [number, number][], baselineY: number): string {
   const last = points[points.length - 1];
   const linePts = points.map(([x, y]) => `${x},${y}`).join(" L ");
   return `M ${first[0]},${baselineY} L ${linePts} L ${last[0]},${baselineY} Z`;
+}
+
+// ---------------------------------------------------------------------------
+// Shared data-shaping helpers — used both by the SVG builders below and by
+// chartDataForFinding()'s JSON output, so the two can never disagree on the
+// underlying numbers.
+// ---------------------------------------------------------------------------
+function binValues(values: number[], bins = 30): { x0: number; x1: number; count: number }[] {
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const binW = (hi - lo || 1) / bins;
+  const counts = new Array(bins).fill(0);
+  for (const v of values) {
+    const idx = Math.min(bins - 1, Math.floor((v - lo) / binW));
+    counts[idx]++;
+  }
+  return counts.map((count, i) => ({ x0: lo + i * binW, x1: lo + (i + 1) * binW, count }));
+}
+
+function computeBoxStats(values: number[]): {
+  q1: number;
+  q3: number;
+  median: number;
+  whiskerLo: number;
+  whiskerHi: number;
+  outliers: number[];
+} {
+  const sorted = [...values].sort((a, b) => a - b);
+  const q1 = quantile(sorted, 0.25);
+  const q3 = quantile(sorted, 0.75);
+  const med = median(sorted);
+  const iqr = q3 - q1;
+  const lowerFence = q1 - 1.5 * iqr;
+  const upperFence = q3 + 1.5 * iqr;
+  const nonOutliers = sorted.filter((v) => v >= lowerFence && v <= upperFence);
+  const whiskerLo = nonOutliers.length ? nonOutliers[0] : q1;
+  const whiskerHi = nonOutliers.length ? nonOutliers[nonOutliers.length - 1] : q3;
+  const outliers = sorted.filter((v) => v < lowerFence || v > upperFence);
+  return { q1, q3, median: med, whiskerLo, whiskerHi, outliers };
+}
+
+function finiteTrend(t: { slope: number; intercept: number }): { slope: number; intercept: number } | null {
+  return Number.isFinite(t.slope) && Number.isFinite(t.intercept) ? t : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -325,13 +369,8 @@ export function histogramChart(values: number[], title: string, xlabel = ""): st
 
   const lo = Math.min(...values);
   const hi = Math.max(...values);
-  const binW = (hi - lo || 1) / bins;
-  const counts = new Array(bins).fill(0);
-  for (const v of values) {
-    const idx = Math.min(bins - 1, Math.floor((v - lo) / binW));
-    counts[idx]++;
-  }
-  const maxCount = Math.max(...counts, 1);
+  const binsData = binValues(values, bins);
+  const maxCount = Math.max(...binsData.map((b) => b.count), 1);
 
   const px = (v: number) => plotLeft + ((v - lo) / (hi - lo || 1)) * (plotRight - plotLeft);
   const barW = (plotRight - plotLeft) / bins;
@@ -342,8 +381,8 @@ export function histogramChart(values: number[], title: string, xlabel = ""): st
     s += svgText(plotLeft - 8, gy + 4, fmtNum((maxCount * g) / 4), { size: 11, color: MUTED, anchor: "end" });
   }
 
-  counts.forEach((c, i) => {
-    const barH = (c / maxCount) * (plotBottom - plotTop);
+  binsData.forEach((b, i) => {
+    const barH = (b.count / maxCount) * (plotBottom - plotTop);
     const x0 = plotLeft + i * barW;
     s += svgRect(x0, plotBottom - barH, Math.max(barW - 1, 1), barH, { fill: ACCENT_LIGHT, rx: 1 });
   });
@@ -394,16 +433,7 @@ export function boxChart(values: number[], title: string, ylabel = "", outlierVa
   s += svgText(24, 34, fitTitle(title, width - 48), { size: 18, weight: "bold" });
 
   const sorted = [...values].sort((a, b) => a - b);
-  const q1 = quantile(sorted, 0.25);
-  const q3 = quantile(sorted, 0.75);
-  const med = median(sorted);
-  const iqr = q3 - q1;
-  const lowerFence = q1 - 1.5 * iqr;
-  const upperFence = q3 + 1.5 * iqr;
-  const nonOutliers = sorted.filter((v) => v >= lowerFence && v <= upperFence);
-  const whiskerLo = nonOutliers.length ? nonOutliers[0] : q1;
-  const whiskerHi = nonOutliers.length ? nonOutliers[nonOutliers.length - 1] : q3;
-  const outliers = sorted.filter((v) => v < lowerFence || v > upperFence);
+  const { q1, q3, median: med, whiskerLo, whiskerHi, outliers } = computeBoxStats(values);
 
   const dataMin = Math.min(sorted[0], outlierVal ?? sorted[0]);
   const dataMax = Math.max(sorted[sorted.length - 1], outlierVal ?? sorted[sorted.length - 1]);
@@ -455,88 +485,320 @@ export function boxChart(values: number[], title: string, ylabel = "", outlierVa
 }
 
 // ---------------------------------------------------------------------------
+// Per-type data prep — row filtering, sampling, and title/label formatting,
+// factored out of the dispatcher so both the SVG (PNG) path below and
+// chartDataForFinding()'s JSON path derive their numbers from the exact same
+// code and can never disagree.
+// ---------------------------------------------------------------------------
+interface RankingPrep {
+  entries: { label: string; value: number }[];
+  title: string;
+  xlabel: string;
+}
+function prepareRankingEntries(finding: Finding): RankingPrep | null {
+  const { columns, extra } = finding;
+  const leaderboard = (extra.leaderboard as Record<string, number>) ?? {};
+  const entries = Object.entries(leaderboard).slice(0, 10);
+  if (entries.length === 0) return null;
+  const combinedCols = extra.combined_cols as string[] | undefined;
+  const colLabel = combinedCols?.length
+    ? combinedCols.map((c) => c.replace(/_/g, " ")).join(" + ")
+    : (columns[columns.length - 1]?.replace(/_/g, " ") ?? "Value");
+  return {
+    entries: entries.map(([label, value]) => ({ label, value })),
+    title: `Top ${entries.length} by ${colLabel}`,
+    xlabel: colLabel,
+  };
+}
+
+interface TrendPrep {
+  x: string[];
+  y: number[];
+  trend: { slope: number; intercept: number } | null;
+  title: string;
+  xlabel: string;
+  ylabel: string;
+}
+function prepareTrendSeries(finding: Finding, rows: Row[]): TrendPrep | null {
+  const { columns } = finding;
+  if (columns.length < 2) return null;
+  const [metricCol, dateCol] = columns;
+  let sub = rows
+    .map((r) => ({ d: r[dateCol], v: r[metricCol] }))
+    .filter((r) => r.d != null && r.d !== "" && typeof r.v === "number" && !Number.isNaN(r.v))
+    .map((r) => ({ t: Date.parse(String(r.d)), v: r.v as number }))
+    .filter((r) => !Number.isNaN(r.t))
+    .sort((a, b) => a.t - b.t);
+  if (sub.length < 3) return null;
+  if (sub.length > 100) {
+    const stride = Math.floor(sub.length / 100);
+    sub = sub.filter((_, i) => i % stride === 0);
+  }
+  const x = sub.map((r) => new Date(r.t).toISOString().slice(0, 10));
+  const y = sub.map((r) => r.v);
+  const trend = x.length >= 3 ? finiteTrend(linearRegression(x.map((_, i) => i), y)) : null;
+  return {
+    x,
+    y,
+    trend,
+    title: `${metricCol.replace(/_/g, " ")} over time`,
+    xlabel: dateCol.replace(/_/g, " "),
+    ylabel: metricCol.replace(/_/g, " "),
+  };
+}
+
+interface ScatterPrep {
+  a: number[];
+  b: number[];
+  r: number;
+  trend: { slope: number; intercept: number } | null;
+  title: string;
+  xlabel: string;
+  ylabel: string;
+}
+function prepareScatterPoints(finding: Finding, rows: Row[]): ScatterPrep | null {
+  const { columns, extra } = finding;
+  if (columns.length < 2) return null;
+  const [colA, colB] = columns;
+  let sub = rows
+    .map((r) => ({ a: r[colA], b: r[colB] }))
+    .filter((r) => typeof r.a === "number" && typeof r.b === "number") as { a: number; b: number }[];
+  if (sub.length < 10) return null;
+  if (sub.length > 2000) {
+    // deterministic thinning rather than true random sampling — good enough for a chart preview
+    const stride = Math.ceil(sub.length / 2000);
+    sub = sub.filter((_, i) => i % stride === 0);
+  }
+  const r = Number(extra.r ?? 0);
+  const a = sub.map((s) => s.a);
+  const b = sub.map((s) => s.b);
+  const trend = a.length >= 3 ? finiteTrend(linearRegression(a, b)) : null;
+  return {
+    a,
+    b,
+    r,
+    trend,
+    title: `${colA.replace(/_/g, " ")} vs ${colB.replace(/_/g, " ")} (r=${r.toFixed(2)})`,
+    xlabel: colA.replace(/_/g, " "),
+    ylabel: colB.replace(/_/g, " "),
+  };
+}
+
+interface HistogramPrep {
+  values: number[];
+  bins: { x0: number; x1: number; count: number }[];
+  mean: number;
+  stdev: number;
+  title: string;
+  xlabel: string;
+}
+function prepareHistogramBins(finding: Finding, rows: Row[]): HistogramPrep | null {
+  const { columns, extra } = finding;
+  if (columns.length === 0) return null;
+  const col = columns[0];
+  const values = rows.map((r) => r[col]).filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
+  if (values.length < 8) return null;
+  const m = mean(values);
+  const stdev = sampleStd(values);
+  if (!Number.isFinite(m) || !Number.isFinite(stdev)) return null;
+  const skew = Number(extra.skew ?? 0);
+  return {
+    values,
+    bins: binValues(values, 30),
+    mean: m,
+    stdev,
+    title: `Distribution of ${col.replace(/_/g, " ")} (skew=${skew.toFixed(2)})`,
+    xlabel: col.replace(/_/g, " "),
+  };
+}
+
+interface DoseResponsePrep {
+  bins: Record<string, number>;
+  xCol: string;
+  outcomeLabel: string;
+  title: string;
+  xlabel: string;
+}
+function prepareDoseResponseBins(finding: Finding): DoseResponsePrep | null {
+  const { columns, extra } = finding;
+  const bins = (extra.bins as Record<string, number>) ?? {};
+  if (Object.keys(bins).length === 0) return null;
+  const xCol = (extra.independent_var as string) ?? columns[0] ?? "the input variable";
+  const outcomeLabel = (extra.outcome_label as string) ?? (columns[1]?.replace(/_/g, " ") ?? "Outcome");
+  const xReadable = xCol.replace(/_/g, " ");
+  return {
+    bins,
+    xCol,
+    outcomeLabel,
+    title: `${outcomeLabel} by ${xReadable} usage (quartiles)`,
+    xlabel: `${xReadable} quartile`,
+  };
+}
+
+interface BoxPrep {
+  values: number[];
+  q1: number;
+  q3: number;
+  median: number;
+  whiskerLo: number;
+  whiskerHi: number;
+  outliers: number[];
+  mostExtreme: number | null;
+  title: string;
+  ylabel: string;
+}
+function prepareBoxStats(finding: Finding, rows: Row[]): BoxPrep | null {
+  const { columns, value } = finding;
+  if (columns.length === 0) return null;
+  const col = columns[0];
+  const values = rows.map((r) => r[col]).filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
+  if (values.length === 0) return null;
+  const { q1, q3, median: med, whiskerLo, whiskerHi, outliers } = computeBoxStats(values);
+  if (![q1, q3, med, whiskerLo, whiskerHi].every(Number.isFinite)) return null;
+  return {
+    values,
+    q1,
+    q3,
+    median: med,
+    whiskerLo,
+    whiskerHi,
+    outliers,
+    mostExtreme: value ?? null,
+    title: `Outliers in ${col.replace(/_/g, " ")}`,
+    ylabel: col.replace(/_/g, " "),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Dispatch by finding type — mirrors the original chart_service.py::chart_for_finding.
 // ---------------------------------------------------------------------------
 export function chartForFinding(finding: Finding, rows: Row[]): string | null {
-  const { type, columns, extra } = finding;
+  const { type } = finding;
 
   try {
     if (type === "ranking") {
-      const leaderboard = (extra.leaderboard as Record<string, number>) ?? {};
-      const entries = Object.entries(leaderboard).slice(0, 10);
-      if (entries.length === 0) return null;
-      const labels = entries.map(([k]) => k);
-      const values = entries.map(([, v]) => v);
-      const combinedCols = extra.combined_cols as string[] | undefined;
-      const colLabel = combinedCols?.length
-        ? combinedCols.map((c) => c.replace(/_/g, " ")).join(" + ")
-        : (columns[columns.length - 1]?.replace(/_/g, " ") ?? "Value");
-      return horizontalBar(labels, values, `Top ${labels.length} by ${colLabel}`, colLabel);
-    }
-
-    if (type === "trend" && columns.length >= 2) {
-      const [metricCol, dateCol] = columns;
-      let sub = rows
-        .map((r) => ({ d: r[dateCol], v: r[metricCol] }))
-        .filter((r) => r.d != null && r.d !== "" && typeof r.v === "number" && !Number.isNaN(r.v))
-        .map((r) => ({ t: Date.parse(String(r.d)), v: r.v as number }))
-        .filter((r) => !Number.isNaN(r.t))
-        .sort((a, b) => a.t - b.t);
-      if (sub.length < 3) return null;
-      if (sub.length > 100) {
-        const stride = Math.floor(sub.length / 100);
-        sub = sub.filter((_, i) => i % stride === 0);
-      }
-      const x = sub.map((r) => new Date(r.t).toISOString().slice(0, 10));
-      const y = sub.map((r) => r.v);
-      return lineChart(x, y, `${metricCol.replace(/_/g, " ")} over time`, dateCol.replace(/_/g, " "), metricCol.replace(/_/g, " "));
-    }
-
-    if (type === "correlation" && columns.length >= 2) {
-      const [colA, colB] = columns;
-      let sub = rows
-        .map((r) => ({ a: r[colA], b: r[colB] }))
-        .filter((r) => typeof r.a === "number" && typeof r.b === "number") as { a: number; b: number }[];
-      if (sub.length < 10) return null;
-      if (sub.length > 2000) {
-        // deterministic thinning rather than true random sampling — good enough for a chart preview
-        const stride = Math.ceil(sub.length / 2000);
-        sub = sub.filter((_, i) => i % stride === 0);
-      }
-      const r = Number(extra.r ?? 0);
-      return scatterChart(
-        sub.map((s) => s.a),
-        sub.map((s) => s.b),
-        `${colA.replace(/_/g, " ")} vs ${colB.replace(/_/g, " ")} (r=${r.toFixed(2)})`,
-        colA.replace(/_/g, " "),
-        colB.replace(/_/g, " ")
+      const p = prepareRankingEntries(finding);
+      if (!p) return null;
+      return horizontalBar(
+        p.entries.map((e) => e.label),
+        p.entries.map((e) => e.value),
+        p.title,
+        p.xlabel
       );
     }
 
-    if (type === "distribution" && columns.length > 0) {
-      const col = columns[0];
-      const values = rows.map((r) => r[col]).filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
-      if (values.length < 8) return null;
-      const skew = Number(extra.skew ?? 0);
-      return histogramChart(values, `Distribution of ${col.replace(/_/g, " ")} (skew=${skew.toFixed(2)})`, col.replace(/_/g, " "));
+    if (type === "trend") {
+      const p = prepareTrendSeries(finding, rows);
+      if (!p) return null;
+      return lineChart(p.x, p.y, p.title, p.xlabel, p.ylabel);
+    }
+
+    if (type === "correlation") {
+      const p = prepareScatterPoints(finding, rows);
+      if (!p) return null;
+      return scatterChart(p.a, p.b, p.title, p.xlabel, p.ylabel);
+    }
+
+    if (type === "distribution") {
+      const p = prepareHistogramBins(finding, rows);
+      if (!p) return null;
+      return histogramChart(p.values, p.title, p.xlabel);
     }
 
     if (type === "dose_response") {
-      const bins = (extra.bins as Record<string, number>) ?? {};
-      if (Object.keys(bins).length === 0) return null;
-      const xCol = (extra.independent_var as string) ?? columns[0] ?? "the input variable";
-      const outcomeLabel = (extra.outcome_label as string) ?? (columns[1]?.replace(/_/g, " ") ?? "Outcome");
-      return doseResponseBarChart(bins, xCol, outcomeLabel);
+      const p = prepareDoseResponseBins(finding);
+      if (!p) return null;
+      return doseResponseBarChart(p.bins, p.xCol, p.outcomeLabel);
     }
 
-    if (type === "outlier" && columns.length > 0) {
-      const col = columns[0];
-      const values = rows.map((r) => r[col]).filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
-      const outlierVal = finding.value;
-      return boxChart(values, `Outliers in ${col.replace(/_/g, " ")}`, col.replace(/_/g, " "), outlierVal ?? null);
+    if (type === "outlier") {
+      const p = prepareBoxStats(finding, rows);
+      if (!p) return null;
+      return boxChart(p.values, p.title, p.ylabel, p.mostExtreme);
     }
   } catch (err) {
     console.error(`chartForFinding failed for type=${type}:`, err);
+    return null;
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Same dispatch as chartForFinding, but returns structured JSON for the
+// interactive web viewer instead of a rasterized PNG.
+// ---------------------------------------------------------------------------
+export function chartDataForFinding(finding: Finding, rows: Row[]): ChartData | null {
+  const { type } = finding;
+
+  try {
+    if (type === "ranking") {
+      const p = prepareRankingEntries(finding);
+      if (!p) return null;
+      return { kind: "bar", title: p.title, xlabel: p.xlabel, entries: p.entries };
+    }
+
+    if (type === "trend") {
+      const p = prepareTrendSeries(finding, rows);
+      if (!p) return null;
+      return {
+        kind: "line",
+        title: p.title,
+        xlabel: p.xlabel,
+        ylabel: p.ylabel,
+        points: p.x.map((x, i) => ({ x, y: p.y[i] })),
+        trend: p.trend,
+      };
+    }
+
+    if (type === "correlation") {
+      const p = prepareScatterPoints(finding, rows);
+      if (!p) return null;
+      return {
+        kind: "scatter",
+        title: p.title,
+        xlabel: p.xlabel,
+        ylabel: p.ylabel,
+        points: p.a.map((x, i) => ({ x, y: p.b[i] })),
+        r: p.r,
+        trend: p.trend,
+      };
+    }
+
+    if (type === "distribution") {
+      const p = prepareHistogramBins(finding, rows);
+      if (!p) return null;
+      return { kind: "histogram", title: p.title, xlabel: p.xlabel, bins: p.bins, mean: p.mean, stdev: p.stdev };
+    }
+
+    if (type === "dose_response") {
+      const p = prepareDoseResponseBins(finding);
+      if (!p) return null;
+      const entries = Object.entries(p.bins).map(([label, value]) => ({ label, value }));
+      if (entries.length === 0) return null;
+      const peakValue = Math.max(...entries.map((e) => e.value));
+      if (!Number.isFinite(peakValue)) return null;
+      return { kind: "doseResponse", title: p.title, xlabel: p.xlabel, entries, peakValue };
+    }
+
+    if (type === "outlier") {
+      const p = prepareBoxStats(finding, rows);
+      if (!p) return null;
+      return {
+        kind: "box",
+        title: p.title,
+        ylabel: p.ylabel,
+        q1: p.q1,
+        median: p.median,
+        q3: p.q3,
+        whiskerLo: p.whiskerLo,
+        whiskerHi: p.whiskerHi,
+        outliers: p.outliers,
+        mostExtreme: p.mostExtreme,
+      };
+    }
+  } catch (err) {
+    console.error(`chartDataForFinding failed for type=${type}:`, err);
     return null;
   }
 

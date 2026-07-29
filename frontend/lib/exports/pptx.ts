@@ -3,6 +3,7 @@ import PptxGenJS from "pptxgenjs";
 import type { Finding } from "@/lib/analysis";
 import type { Chapter, ChapterId } from "@/lib/llm/schemas";
 import { chartBase64, pngDimensions, type PptxExportData } from "./types";
+import { parseInlineMarkdown } from "@/lib/markdown";
 
 const SLIDE_W = 13.333;
 const SLIDE_H = 7.5;
@@ -12,6 +13,38 @@ const SLIDE_H = 7.5;
 // react-pdf/docx (see lib/exports/types.ts DataOrPathProps docs).
 function pptxImageData(b64: string): string {
   return `image/png;base64,${b64}`;
+}
+
+/** Narrated text is light Markdown, and pptxgenjs styles text per run -- so
+ * each mark becomes its own run rather than printing literal asterisks on a
+ * slide. Options are only set when a mark is actually present, since a key
+ * explicitly set to undefined would shadow the slide-level defaults these
+ * runs are rendered with. Line breaks must be explicit runs (pptxgenjs
+ * ignores "\n" inside a run). */
+function pptxRuns(text: string): PptxGenJS.TextProps[] {
+  const lines = text.split("\n");
+  const runs: PptxGenJS.TextProps[] = [];
+
+  lines.forEach((line, lineIndex) => {
+    const isLastLine = lineIndex === lines.length - 1;
+    const tokens = parseInlineMarkdown(line);
+    if (tokens.length === 0) {
+      runs.push({ text: "", options: isLastLine ? {} : { breakLine: true } });
+      return;
+    }
+    tokens.forEach((token, i) => {
+      const options: PptxGenJS.TextPropsOptions = {};
+      if (token.bold) options.bold = true;
+      if (token.italic) options.italic = true;
+      if (token.strike) options.strike = "sngStrike";
+      if (token.code) options.fontFace = "Consolas";
+      if (token.href) options.hyperlink = { url: token.href };
+      if (!isLastLine && i === tokens.length - 1) options.breakLine = true;
+      runs.push({ text: token.text, options });
+    });
+  });
+
+  return runs;
 }
 
 /** Fits an image into a bounding box without distorting its aspect ratio
@@ -114,7 +147,7 @@ class SlideBuilder {
   }
 
   private addText(slide: PptxGenJS.Slide, text: string, opts: AddTextOpts): void {
-    slide.addText(text, {
+    slide.addText(pptxRuns(text), {
       x: opts.x,
       y: opts.y,
       w: opts.w,

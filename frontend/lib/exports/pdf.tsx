@@ -2,6 +2,7 @@ import "server-only";
 import { Document, Page, Text, View, Image, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
 import type { StoryBlock, Chapter } from "@/lib/llm/schemas";
 import { accentFor, chartDataUri, type NarrationExportData } from "./types";
+import { parseInlineMarkdown } from "@/lib/markdown";
 
 const styles = StyleSheet.create({
   page: {
@@ -51,6 +52,30 @@ const styles = StyleSheet.create({
   footer: { marginTop: 48, fontSize: 10, color: "#9ca3af" },
 });
 
+/** Narrated text is light Markdown. Nested <Text> inherits the surrounding
+ * style, so each run only overrides what its own marks change -- bold inside
+ * an already-bold heading stays bold, italic inside the hook stays italic. */
+function Rich({ text }: { text: string }) {
+  return (
+    <>
+      {parseInlineMarkdown(text).map((token, i) => (
+        <Text
+          key={i}
+          style={{
+            fontWeight: token.bold ? 700 : undefined,
+            fontStyle: token.italic ? "italic" : undefined,
+            fontFamily: token.code ? "Courier" : undefined,
+            color: token.href ? "#2563eb" : undefined,
+            textDecoration: token.strike ? "line-through" : token.href ? "underline" : undefined,
+          }}
+        >
+          {token.text}
+        </Text>
+      ))}
+    </>
+  );
+}
+
 function Blocks({ blocks, findings, accent }: { blocks: StoryBlock[]; findings: NarrationExportData["findings"]; accent: string }) {
   return (
     <>
@@ -58,14 +83,14 @@ function Blocks({ blocks, findings, accent }: { blocks: StoryBlock[]; findings: 
         if (block.type === "heading") {
           return (
             <Text key={i} style={[block.level === 1 ? styles.subheading1 : styles.subheading2, { color: accent }]}>
-              {block.text}
+              <Rich text={block.text} />
             </Text>
           );
         }
         if (block.type === "paragraph") {
           return (
             <Text key={i} style={styles.p}>
-              {block.text}
+              <Rich text={block.text} />
             </Text>
           );
         }
@@ -74,7 +99,7 @@ function Blocks({ blocks, findings, accent }: { blocks: StoryBlock[]; findings: 
             <View key={i} style={{ marginBottom: 12 }}>
               {block.items.map((item, j) => (
                 <Text key={j} style={styles.listItem}>
-                  • {item}
+                  • <Rich text={item} />
                 </Text>
               ))}
             </View>
@@ -92,7 +117,9 @@ function ChapterSection({ chapter, findings, accent }: { chapter: Chapter; findi
   if (chapter.blocks.length === 0) return null;
   return (
     <View>
-      <Text style={[styles.chapterTitle, { color: accent }]}>{chapter.title}</Text>
+      <Text style={[styles.chapterTitle, { color: accent }]}>
+        <Rich text={chapter.title} />
+      </Text>
       <Blocks blocks={chapter.blocks} findings={findings} accent={accent} />
     </View>
   );
@@ -137,13 +164,19 @@ function ReportDocument({ metadata, narration, findings, brand }: NarrationExpor
           )}
         </View>
 
-        <Text style={[styles.headline, { color: accent }]}>{narration.headline}</Text>
-        <Text style={styles.hook}>{narration.hook}</Text>
+        <Text style={[styles.headline, { color: accent }]}>
+          <Rich text={narration.headline} />
+        </Text>
+        <Text style={styles.hook}>
+          <Rich text={narration.hook} />
+        </Text>
 
         {metadata.question && narration.focusQuestionCallout && (
           <View style={[styles.focusCallout, { borderLeftColor: accent, backgroundColor: "#f9fafb" }]}>
             <Text style={[styles.focusCalloutLabel, { color: accent }]}>Focus Question: {metadata.question}</Text>
-            <Text style={styles.focusCalloutText}>{narration.focusQuestionCallout}</Text>
+            <Text style={styles.focusCalloutText}>
+              <Rich text={narration.focusQuestionCallout} />
+            </Text>
           </View>
         )}
 
@@ -154,11 +187,17 @@ function ReportDocument({ metadata, narration, findings, brand }: NarrationExpor
         {hasActions && (
           <View style={styles.actionsBox}>
             <Text style={[styles.actionsTitle, { color: accent }]}>Strategic Actions</Text>
-            {narration.implication && <Text style={styles.implicationText}>{narration.implication}</Text>}
+            {narration.implication && (
+              <Text style={styles.implicationText}>
+                <Rich text={narration.implication} />
+              </Text>
+            )}
             {narration.actions.map((action, i) => (
               <View key={i} style={styles.actionItem}>
                 <Text style={[styles.actionNumber, { color: accent }]}>{i + 1}.</Text>
-                <Text style={styles.actionText}>{action}</Text>
+                <Text style={styles.actionText}>
+                  <Rich text={action} />
+                </Text>
               </View>
             ))}
           </View>

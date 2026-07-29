@@ -4,7 +4,7 @@ import { downloadBytes, uploadBytes } from "@/lib/storage";
 import { parseTabular, parseText, type TabularData } from "@/lib/fileParsing";
 import { analyze, findPreColumn, type Row } from "@/lib/analysis";
 import { rankFindings } from "@/lib/insight";
-import { chartForFinding } from "@/lib/charts";
+import { chartForFinding, chartDataForFinding } from "@/lib/charts";
 import { buildStoryArc, buildTextStoryArc, type StoryArc } from "@/lib/story";
 import { identifyRelevantColumns, generateStoryBlocks } from "@/lib/llm";
 import type { ColumnClassification, StoryNarrationResult } from "@/lib/llm/schemas";
@@ -12,6 +12,7 @@ import { renderReportPdf } from "@/lib/exports/pdf";
 import { buildWordDocument } from "@/lib/exports/word";
 import { buildPptx } from "@/lib/exports/pptx";
 import { buildDatasetLabel, type ExportBrand } from "@/lib/exports/types";
+import { stripMarkdown } from "@/lib/markdown";
 import type { Report, Upload, User } from "@/lib/generated/prisma/client";
 
 // Step return values are round-tripped through JSON by Inngest for durable
@@ -39,7 +40,9 @@ export function withTiming<T>(reportId: string, label: string, fn: () => T | Pro
 }
 
 export function deriveTitle(hook: string): string {
-  const title = hook.trim().replace(/\.+$/, "");
+  // The narrator writes Markdown in the hook/headline; a title lands in plain
+  // contexts (report list, PDF document metadata) that can't style it.
+  const title = stripMarkdown(hook).trim().replace(/\.+$/, "");
   return title.length <= 70 ? title : `${title.slice(0, 67)}...`;
 }
 
@@ -196,9 +199,14 @@ export async function narrate(
     if (result.climaxIndex !== null) referenced.add(result.climaxIndex);
     for (const idx of referenced) {
       const finding = updatedArc.findings[idx];
-      if (finding && !finding.extra.chart_b64) {
+      if (!finding) continue;
+      if (!finding.extra.chart_b64) {
         const b64 = chartForFinding(finding, rows);
         if (b64) finding.extra.chart_b64 = b64;
+      }
+      if (!finding.extra.chart_data) {
+        const data = chartDataForFinding(finding, rows);
+        if (data) finding.extra.chart_data = data;
       }
     }
   }

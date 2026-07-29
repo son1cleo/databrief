@@ -7,6 +7,35 @@ import { reportOverageUsage } from "@/lib/billing";
 import { deletePrefix } from "@/lib/storage";
 import type { Report, User } from "@/lib/generated/prisma/client";
 
+// Once a finding has the newer `chart_data` JSON (consumed by the
+// interactive web viewer), the old `chart_b64` PNG is only still needed by
+// the PDF/Word/PPTX exporters -- and those read straight off the in-memory
+// storyArc during generation (before this row is ever re-fetched), not from
+// this API response. Dropping it here trims a meaningful amount of embedded
+// base64 pixel data from every report page load. Only drops it when
+// chart_data is present, so reports generated before this shipped (which
+// have chart_b64 but no chart_data yet) keep rendering via the <img>
+// fallback in ReportViewer untouched.
+function trimChartB64(storyJson: Report["storyJson"]): Report["storyJson"] {
+  if (!storyJson || typeof storyJson !== "object" || Array.isArray(storyJson)) return storyJson;
+  const arc = storyJson as { findings?: unknown[] };
+  if (!Array.isArray(arc.findings)) return storyJson;
+  return {
+    ...arc,
+    findings: arc.findings.map((f) => {
+      if (!f || typeof f !== "object") return f;
+      const finding = f as { extra?: Record<string, unknown> };
+      const extra = finding.extra;
+      if (extra && typeof extra === "object" && "chart_data" in extra && "chart_b64" in extra) {
+        const rest = { ...extra };
+        delete rest.chart_b64;
+        return { ...finding, extra: rest };
+      }
+      return finding;
+    }),
+  } as Report["storyJson"];
+}
+
 export function toReportOut(report: Report) {
   return {
     id: report.id,
@@ -14,7 +43,7 @@ export function toReportOut(report: Report) {
     upload_id: report.uploadId,
     title: report.title,
     hook: report.hook,
-    story_json: report.storyJson,
+    story_json: trimChartB64(report.storyJson),
     story_blocks: report.storyBlocks,
     word_count: report.wordCount,
     findings_count: report.findingsCount,

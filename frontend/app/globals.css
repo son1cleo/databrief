@@ -118,6 +118,12 @@
   --chart-4: #a78bfa;
   --chart-5: #8b949e;
   --radius: 0.75rem;
+  /* Sticky bar stack inside the app's scrolling <main>. The breadcrumb pins at
+     the top of the scroll port; any secondary page bar (a report's meta strip,
+     a detail page's tab rail) pins directly beneath it with
+     `sticky top-(--crumb-bar-h)`. Keep this in sync with the height
+     BreadcrumbBar renders at. */
+  --crumb-bar-h: 2.75rem;
   --sidebar: #080c14;
   --sidebar-foreground: #e6edf3;
   --sidebar-primary: #3b82f6;

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { IconBadge } from "@/components/ui/icon-badge";
 import { MetaBox } from "@/components/ui/meta-box";
 import { Panel } from "@/components/ui/panel";
+import { stripMarkdown } from "@/lib/markdown";
 import { statusBadgeVariant } from "@/lib/utils";
 import type { ReportListItem } from "@/lib/types";
 
@@ -71,7 +72,7 @@ export function ReportCard({ report, onDelete }: ReportCardProps) {
 
       {report.hook && (
         <p className="mb-4 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-          {report.hook}
+          {stripMarkdown(report.hook)}
         </p>
       )}
 

@@ -8,6 +8,7 @@ import { BreadcrumbBar } from "@/components/ui/breadcrumb-bar";
 import { IconBadge } from "@/components/ui/icon-badge";
 import { MetaBox } from "@/components/ui/meta-box";
 import { Panel } from "@/components/ui/panel";
+import { RichText } from "@/components/reports/Markdown";
 import { ReportViewer } from "@/components/reports/ReportViewer";
 import { ReportProcessing } from "@/components/reports/ReportProcessing";
 import { ReportDetailActions } from "@/components/reports/ReportDetailActions";
@@ -63,7 +64,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
               </h2>
               {report.hook && (
                 <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                  {report.hook}
+                  <RichText text={report.hook} />
                 </p>
               )}
             </div>

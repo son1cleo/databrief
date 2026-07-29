@@ -163,6 +163,12 @@ support a chart; descriptive/data_quality findings don't). Set findingRef to tha
 after the paragraph that discusses that specific finding -- never group all of a chapter's \
 charts together at the end, detached from the text that explains them, and never omit \
 charts entirely.
+- FORMATTING: every text field renders as Markdown in the web report and in the PDF/Word/\
+PowerPoint exports. Use **bold** to spotlight the one figure or phrase that carries each \
+paragraph (at most one or two per paragraph -- bolding everything spotlights nothing), and \
+\`backticks\` when you must cite a column name verbatim. Do NOT use Markdown headings (#), \
+tables, images, or links: structure comes from the block types above, and bullet lists \
+belong in a "list" block, not as dashes inside a paragraph.
 - Target 1000-2000 words total across all chapters for a typical dataset; shorter is fine \
 if the arc is thin.`;
 
@@ -206,7 +212,13 @@ replies to an internal question -- write them as a standalone editorial headline
 - headline and hook must say different things -- never let one be a truncated copy of the \
 other.
 - Each chapter's blocks are heading/paragraph/list only -- there are no findings/charts \
-for a raw-text document.`;
+for a raw-text document.
+- FORMATTING: every text field renders as Markdown in the web report and in the PDF/Word/\
+PowerPoint exports. Use **bold** to spotlight the one figure or phrase that carries each \
+paragraph (at most one or two per paragraph), and \`backticks\` for terms quoted verbatim \
+from the document. Do NOT use Markdown headings (#), tables, images, or links: structure \
+comes from the block types, and bullet lists belong in a "list" block, not as dashes \
+inside a paragraph.`;
 
 function stripChartB64(extra: Record<string, unknown>): Record<string, unknown> {
   if (!("chart_b64" in extra)) return extra;

@@ -2,6 +2,26 @@ import "server-only";
 import { Document, Packer, Paragraph, TextRun, ImageRun, HeadingLevel, ShadingType, BorderStyle } from "docx";
 import { chartDataUri, pngDimensions, type NarrationExportData } from "./types";
 import type { StoryBlock } from "@/lib/llm/schemas";
+import { parseInlineMarkdown } from "@/lib/markdown";
+
+/** Narrated text is light Markdown -- split it into docx runs so emphasis
+ * renders as formatting instead of literal asterisks. `base` carries the
+ * paragraph-level styling each run inherits. */
+function runs(text: string, base: { italics?: boolean; bold?: boolean; color?: string; size?: number } = {}): TextRun[] {
+  return parseInlineMarkdown(text).map(
+    (token) =>
+      new TextRun({
+        text: token.text,
+        bold: token.bold || base.bold,
+        italics: token.italic || base.italics,
+        strike: token.strike,
+        font: token.code ? "Consolas" : undefined,
+        color: token.href ? "2563EB" : base.color,
+        underline: token.href ? {} : undefined,
+        size: base.size,
+      })
+  );
+}
 
 function chartImageParagraph(dataUri: string): Paragraph {
   const base64 = dataUri.slice(dataUri.indexOf(",") + 1);
@@ -26,13 +46,16 @@ function blockParagraphs(blocks: StoryBlock[], findings: NarrationExportData["fi
   for (const block of blocks) {
     if (block.type === "heading") {
       paragraphs.push(
-        new Paragraph({ text: block.text, heading: block.level === 1 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3 })
+        new Paragraph({
+          children: runs(block.text),
+          heading: block.level === 1 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3,
+        })
       );
     } else if (block.type === "paragraph") {
-      if (block.text.trim()) paragraphs.push(new Paragraph({ children: [new TextRun(block.text)] }));
+      if (block.text.trim()) paragraphs.push(new Paragraph({ children: runs(block.text) }));
     } else if (block.type === "list") {
       for (const item of block.items) {
-        paragraphs.push(new Paragraph({ text: item, bullet: { level: 0 } }));
+        paragraphs.push(new Paragraph({ children: runs(item), bullet: { level: 0 } }));
       }
     } else {
       const uri = chartDataUri(findings, block.findingRef);
@@ -55,8 +78,8 @@ export async function buildWordDocument({ metadata, narration, findings }: Narra
       : metadata.datasetLabel;
   children.push(new Paragraph({ children: [new TextRun({ text: metaRun, size: 18, color: "6B7280" })], spacing: { after: 200 } }));
 
-  children.push(new Paragraph({ text: narration.headline, heading: HeadingLevel.TITLE }));
-  children.push(new Paragraph({ children: [new TextRun({ text: narration.hook, italics: true })], spacing: { after: 200 } }));
+  children.push(new Paragraph({ children: runs(narration.headline), heading: HeadingLevel.TITLE }));
+  children.push(new Paragraph({ children: runs(narration.hook, { italics: true }), spacing: { after: 200 } }));
 
   if (metadata.question && narration.focusQuestionCallout) {
     children.push(
@@ -70,7 +93,7 @@ export async function buildWordDocument({ metadata, narration, findings }: Narra
       new Paragraph({
         shading: CALLOUT_SHADING,
         border: { left: CALLOUT_BORDER },
-        children: [new TextRun(narration.focusQuestionCallout)],
+        children: runs(narration.focusQuestionCallout),
         spacing: { after: 200 },
       })
     );
@@ -78,20 +101,20 @@ export async function buildWordDocument({ metadata, narration, findings }: Narra
 
   for (const chapter of narration.chapters) {
     if (chapter.blocks.length === 0) continue;
-    children.push(new Paragraph({ text: chapter.title, heading: HeadingLevel.HEADING_1 }));
+    children.push(new Paragraph({ children: runs(chapter.title), heading: HeadingLevel.HEADING_1 }));
     children.push(...blockParagraphs(chapter.blocks, findings));
   }
 
   if (narration.implication || narration.actions.length > 0) {
     children.push(new Paragraph({ text: "Strategic Actions", heading: HeadingLevel.HEADING_1 }));
     if (narration.implication) {
-      children.push(new Paragraph({ children: [new TextRun(narration.implication)], spacing: { after: 120 } }));
+      children.push(new Paragraph({ children: runs(narration.implication), spacing: { after: 120 } }));
     }
     narration.actions.forEach((action, i) => {
       children.push(
         new Paragraph({
           shading: CALLOUT_SHADING,
-          children: [new TextRun({ text: `${i + 1}. `, bold: true }), new TextRun(action)],
+          children: [new TextRun({ text: `${i + 1}. `, bold: true }), ...runs(action)],
           spacing: { after: 80 },
         })
       );

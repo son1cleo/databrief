@@ -28,7 +28,9 @@ export function DatasetExplorer({ insights, reports }: DatasetExplorerProps) {
 
   return (
     <FolderTabs defaultValue={structured ? "overview" : "text"}>
-      <FolderTabsList>
+      {/* Pins under the page's breadcrumb so switching tabs stays reachable
+          while scrolling a long findings list or data table. */}
+      <FolderTabsList className="sticky top-(--crumb-bar-h) z-20">
         {structured && (
           <FolderTab value="overview" icon={LayoutDashboard}>
             Overview
