@@ -70,9 +70,9 @@ export function fallbackNarrationResult(storyArc: StoryArc): StoryNarrationResul
     )
   );
   const chapters: Chapter[] = [
-    { id: "macro_trend", title: "Chapter I — The Macro Trend", blocks: macroTrend },
-    { id: "anomalies", title: "Chapter II — Anomalies & Outliers", blocks: anomalies },
-    { id: "correlated_drivers", title: "Chapter III — Correlated Drivers", blocks: correlatedDrivers },
+    { id: "macro_trend", title: "Chapter I — The Macro Trend", blocks: macroTrend, citedFindingIndices: [] },
+    { id: "anomalies", title: "Chapter II — Anomalies & Outliers", blocks: anomalies, citedFindingIndices: [] },
+    { id: "correlated_drivers", title: "Chapter III — Correlated Drivers", blocks: correlatedDrivers, citedFindingIndices: [] },
   ];
 
   const hook = stripLeadIn(storyArc.hook);
@@ -96,9 +96,9 @@ function fallbackTextNarrationResult(storyArc: StoryArc): StoryNarrationResult {
   const snippet = (storyArc.raw_text || "").slice(0, 1500);
 
   const chapters: Chapter[] = [
-    { id: "macro_trend", title: "Chapter I — The Macro Trend", blocks: [{ type: "paragraph", text: storyArc.context || "" }] },
-    { id: "anomalies", title: "Chapter II — Anomalies & Outliers", blocks: [{ type: "paragraph", text: snippet }] },
-    { id: "correlated_drivers", title: "Chapter III — Correlated Drivers", blocks: [] },
+    { id: "macro_trend", title: "Chapter I — The Macro Trend", blocks: [{ type: "paragraph", text: storyArc.context || "" }], citedFindingIndices: [] },
+    { id: "anomalies", title: "Chapter II — Anomalies & Outliers", blocks: [{ type: "paragraph", text: snippet }], citedFindingIndices: [] },
+    { id: "correlated_drivers", title: "Chapter III — Correlated Drivers", blocks: [], citedFindingIndices: [] },
   ];
 
   return {

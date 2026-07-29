@@ -1,19 +1,10 @@
 import "server-only";
-import type { Finding } from "@/lib/analysis";
 import { configuredProviders } from "@/lib/llm/providers";
 import { runWithFallback } from "@/lib/llm/fallbackGraph";
-import {
-  columnClassificationSchema,
-  storyNarrationSchema,
-  CHAPTER_IDS,
-  chapterForFindingType,
-  type ColumnClassification,
-  type Chapter,
-  type ChapterId,
-  type StoryNarrationResult,
-} from "@/lib/llm/schemas";
+import { columnClassificationSchema, type ColumnClassification, type StoryNarrationResult } from "@/lib/llm/schemas";
 import { fallbackNarrationResult } from "@/lib/llm/fallbackNarrator";
-import { stripLeadIn, ensureDistinctHeadline, type StoryArc } from "@/lib/story";
+import { runStructuredNarrationTurns, runTextNarrationTurns } from "@/lib/llm/narrationAgent";
+import type { StoryArc } from "@/lib/story";
 
 const COLUMN_RESOLVER_PROMPT = `You are a data analyst. A user has uploaded a dataset and asked a question. \
 Your job is to identify which columns are relevant to answering their question.
@@ -330,44 +321,9 @@ export async function generateStoryBlocks(
   if (providers.length === 0) return fallbackNarrationResult(storyArc);
 
   const isTextDoc = storyArc.raw_text !== undefined;
-  const systemPrompt = (isTextDoc ? TEXT_SYSTEM_PROMPT : SYSTEM_PROMPT).replace("{industry}", industry || "general business");
+  const result = isTextDoc
+    ? await runTextNarrationTurns(storyArc, industry, question, providers)
+    : await runStructuredNarrationTurns(storyArc, industry, question, providers);
 
-  // Deliberately NOT spreading storyArc here. It carries pre-written
-  // rule-based prose (hook, context, implication, action, climax's own
-  // description) meant only as a no-LLM fallback -- handing that to the LLM
-  // as "input" gave it something to anchor on and lightly paraphrase rather
-  // than synthesize, which is what produced near-identical phrasing
-  // repeated across headline/hook/chapters. Only raw facts go in: findings
-  // stripped of their own pre-written description (factsOnly), or the raw
-  // document text for a text upload (that IS the source material, not
-  // pre-written narrative -- it must still reach the LLM). No dataset-shape
-  // metadata (row/column counts) either -- the system prompt bans restating
-  // it, so it isn't worth the anchoring risk to include at all.
-  const questionLine = question ? `\nThe user specifically asked: "${question}"` : "";
-  const userMessage = isTextDoc
-    ? `Here is the document text to narrate:\n\n${storyArc.raw_text}${questionLine}`
-    : `Here is the full list of findings to choose a story from:\n\n${JSON.stringify(storyArc.findings.map(factsOnly))}${questionLine}`;
-
-  const outcome = await runWithFallback(providers, systemPrompt, userMessage, storyNarrationSchema);
-  if (outcome.result === null) return fallbackNarrationResult(storyArc);
-
-  const { result } = outcome;
-  const climaxIndex =
-    result.climaxIndex !== null && result.climaxIndex >= 0 && result.climaxIndex < storyArc.findings.length
-      ? result.climaxIndex
-      : null;
-  const chapters = ensureClimaxChart(normalizeChapters(result.chapters), climaxIndex, storyArc.findings);
-  const hook = stripLeadIn(result.hook || storyArc.hook);
-  const headline = ensureDistinctHeadline(stripLeadIn(result.headline || storyArc.hook), hook);
-
-  return {
-    headline,
-    hook,
-    climaxIndex,
-    chapters,
-    focusQuestionCallout: question ? result.focusQuestionCallout || null : null,
-    implication: result.implication || storyArc.implication,
-    actions: normalizeActions(result.actions, storyArc.action),
-    wordCount: countWordsInChapters(chapters),
-  };
+  return result ?? fallbackNarrationResult(storyArc);
 }
