@@ -1,16 +1,23 @@
 import "server-only";
 import type { Finding } from "@/lib/analysis";
-import { stripLeadIn, ensureDistinctHeadline, type StoryArc } from "@/lib/story";
+import { stripLeadIn, questionAnswer, IMPLICATION_TEMPLATES, HEADLINE_TEMPLATES, type StoryArc } from "@/lib/story";
 import { chapterForFindingType, type StoryBlock, type Chapter, type StoryNarrationResult } from "./schemas";
 
 function findingIndex(findings: Finding[], target: Finding): number {
   return findings.indexOf(target);
 }
 
+/** Every deterministic-narrator paragraph must answer "so what," not just
+ * restate the raw statistic (this was the exact bug: "goals ranges from
+ * 0.00 to 4.00, averaging 0.06." with zero framing). No LLM is available on
+ * this path, so the "so what" comes from IMPLICATION_TEMPLATES -- the same
+ * type-keyed canned sentences already used for the report's single overall
+ * implication -- applied per finding instead of once for the whole report. */
 function chapterBlocks(findings: Finding[], all: Finding[], limit: number): StoryBlock[] {
   const blocks: StoryBlock[] = [];
   for (const f of findings.slice(0, limit)) {
-    blocks.push({ type: "paragraph", text: f.description });
+    const soWhat = IMPLICATION_TEMPLATES[f.type] ?? IMPLICATION_TEMPLATES.descriptive;
+    blocks.push({ type: "paragraph", text: `${f.description} ${soWhat}` });
     blocks.push({ type: "chart", findingRef: findingIndex(all, f) });
   }
   return blocks;
@@ -76,12 +83,13 @@ export function fallbackNarrationResult(storyArc: StoryArc): StoryNarrationResul
   ];
 
   const hook = stripLeadIn(storyArc.hook);
+  const headline = HEADLINE_TEMPLATES[storyArc.climax?.type ?? "descriptive"] ?? "Key Finding";
   return {
-    headline: ensureDistinctHeadline(hook, hook),
+    headline,
     hook,
     climaxIndex: climaxIdx >= 0 ? climaxIdx : null,
     chapters,
-    focusQuestionCallout: storyArc.question && storyArc.open_question ? storyArc.open_question : null,
+    focusQuestionCallout: questionAnswer(findings, storyArc.question),
     implication: storyArc.implication,
     // Only one rule-based action exists without an LLM to generate 3
     // distinct pillars -- return what's real (0 or 1) rather than padding
@@ -102,11 +110,15 @@ function fallbackTextNarrationResult(storyArc: StoryArc): StoryNarrationResult {
   ];
 
   return {
-    headline: ensureDistinctHeadline(hook, hook),
+    headline: "What Stood Out",
     hook,
     climaxIndex: null,
     chapters,
-    focusQuestionCallout: storyArc.question ? `In answer to: "${storyArc.question}"` : null,
+    // No LLM and no structured findings to answer from on this path -- an
+    // honest "we can't answer this deterministically" is null, not a fake
+    // "In answer to: X" echo that never actually answered anything (the
+    // same class of bug fixed above for the structured path).
+    focusQuestionCallout: null,
     implication: storyArc.implication,
     actions: [],
     wordCount: countWordsInChapters(chapters),

@@ -1,7 +1,7 @@
 import "server-only";
 import type { Finding } from "@/lib/analysis";
 
-const IMPLICATION_TEMPLATES: Record<string, string> = {
+export const IMPLICATION_TEMPLATES: Record<string, string> = {
   ranking: "A clear leader has emerged -- but the gap between first and the rest tells its own story.",
   dose_response: "There is an optimal level -- both too little and too much may be counterproductive.",
   outlier: "A handful of records are skewing the picture -- worth checking whether they're errors or genuinely exceptional cases.",
@@ -10,6 +10,23 @@ const IMPLICATION_TEMPLATES: Record<string, string> = {
   distribution: "Most of the value (or risk) is concentrated in a small slice of the data, not spread evenly.",
   descriptive: "This baseline is the yardstick everything else in the dataset should be measured against.",
   data_quality: "Gaps in the data limit how much confidence to place in any single number here.",
+};
+
+// Deterministic, type-keyed headline labels for the no-LLM fallback path.
+// The fallback only ever has one rule-based sentence (the hook) to work
+// with -- calling ensureDistinctHeadline(hook, hook) always detects them as
+// identical and falls back to extracting the hook's own first sentence,
+// which is by definition still the same text. These give the fallback a
+// real, structurally distinct headline instead.
+export const HEADLINE_TEMPLATES: Record<string, string> = {
+  ranking: "The Leaderboard",
+  dose_response: "The Dose-Response Curve",
+  outlier: "Outliers Worth a Second Look",
+  trend: "The Trend Line",
+  correlation: "What's Driving What",
+  distribution: "Where the Data Concentrates",
+  descriptive: "The Baseline Numbers",
+  data_quality: "A Data Quality Check",
 };
 
 const ACTION_TEMPLATES: Record<string, string> = {
@@ -75,6 +92,51 @@ function questionHook(findings: Finding[], question: string | null | undefined):
   }
 
   return clean[0]?.description ?? findings[0]?.description ?? "Your data has a story to tell.";
+}
+
+/** Direct, declarative answer to the user's focus question -- shares
+ * questionHook()'s dose_response/ranking finding selection and fact
+ * extraction, but phrased as a straight answer rather than a teaser (the
+ * hook is deliberately teaser-style; reusing its exact wording here would
+ * recreate the hook/callout duplication bug already fixed on the LLM path).
+ * Returns null when there's no question, or no question-relevant finding to
+ * answer from -- callers must not show a callout in that case, not
+ * fabricate one (this replaces a previous bug where the fallback path used
+ * `open_question`, a "what else might explain X?" follow-up template, as if
+ * it were an answer -- it never actually answered anything). */
+export function questionAnswer(findings: Finding[], question: string | null | undefined): string | null {
+  if (!question) return null;
+
+  const dose = findings.filter((f) => f.type === "dose_response");
+  if (dose.length > 0) {
+    const top = dose[0];
+    const x = String(top.extra.independent_var ?? "").replace(/_/g, " ");
+    const pattern = top.extra.pattern;
+    const outcome = (top.extra.outcome_label as string) ?? "performance";
+    const peakBucket = top.extra.peak_bucket;
+    if (pattern === "inverted_u" && peakBucket) {
+      return `${titleCase(x)} helps ${outcome} up to about ${peakBucket} usage, then the benefit reverses.`;
+    }
+    if (pattern === "linear_positive") return `More ${x} consistently tracks with better ${outcome} across this dataset.`;
+    if (pattern === "linear_negative") return `More ${x} tracks with worse ${outcome} across this dataset -- the opposite of what's often assumed.`;
+    return top.description;
+  }
+
+  const ranking = findings.filter((f) => f.type === "ranking");
+  if (ranking.length > 0) {
+    const top = ranking[0];
+    const entity = String(top.extra.top_entity ?? "");
+    const val = Number(top.extra.top_value ?? 0);
+    if (top.extra.is_combined) {
+      const combinedCols = (top.extra.combined_cols as string[]) ?? [];
+      const readable = combinedCols.map((c) => c.replace(/_/g, " ").replace("tournament", "").trim()).join(" + ");
+      return `${entity} tops this ranking, with ${val.toLocaleString("en-US", { maximumFractionDigits: 0 })} combined ${readable}.`;
+    }
+    const col = (top.extra.col as string) ?? top.columns[top.columns.length - 1] ?? "";
+    return `${entity} leads the dataset in ${col.replace(/_/g, " ")}, at ${val.toLocaleString("en-US", { maximumFractionDigits: 0 })}.`;
+  }
+
+  return null;
 }
 
 function titleCase(s: string): string {
@@ -159,7 +221,6 @@ export interface StoryArc {
   climax: Finding | null;
   implication: string;
   action: string;
-  open_question: string | null;
   question: string | null;
   /** 0-100, rule-based (see computeDataConfidence); null when there's
    * nothing to derive a score from (no findings / raw-text upload). */
@@ -186,7 +247,6 @@ export function buildStoryArc(
       climax: null,
       implication: "More data or a different cut may be needed to find a story here.",
       action: "Try uploading a richer dataset or asking a more specific question.",
-      open_question: null,
       question,
       dataConfidence: null,
       rowCount,
@@ -208,11 +268,6 @@ export function buildStoryArc(
     climax,
     implication: IMPLICATION_TEMPLATES[climax.type] ?? IMPLICATION_TEMPLATES.descriptive,
     action: ACTION_TEMPLATES[climax.type] ?? ACTION_TEMPLATES.descriptive,
-    open_question: question
-      ? `What else might explain ${question.replace(/\?$/, "")}?`
-      : findings.length > 1
-        ? `What's behind ${findings[1].columns.join(", ")}?`
-        : null,
     question,
     dataConfidence: computeDataConfidence(findings),
     rowCount,
@@ -232,7 +287,6 @@ export function buildTextStoryArc(text: string, question: string | null = null):
     climax: null,
     implication: "",
     action: "",
-    open_question: null,
     question,
     dataConfidence: null,
     rowCount: null,

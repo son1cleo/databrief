@@ -69,12 +69,19 @@ export async function generateStoryBlocks(
   preferredProvider?: string | null
 ): Promise<StoryNarrationResult> {
   const providers = configuredProviders(preferredProvider);
-  if (providers.length === 0) return fallbackNarrationResult(storyArc);
+  if (providers.length === 0) {
+    console.log("[narration] falling back: no LLM providers configured (check GROQ_API_KEY/MISTRAL_API_KEY/NVIDIA_API_KEY in this process's env)");
+    return fallbackNarrationResult(storyArc);
+  }
 
   const isTextDoc = storyArc.raw_text !== undefined;
   const result = isTextDoc
     ? await runTextNarrationTurns(storyArc, industry, question, providers)
     : await runStructuredNarrationTurns(storyArc, industry, question, providers);
+
+  if (result === null) {
+    console.log(`[narration] falling back: providers were configured (${providers.map((p) => p.name).join(", ")}) but the turn sequence failed -- see [narration] turn-failed logs above for the actual provider errors`);
+  }
 
   return result ?? fallbackNarrationResult(storyArc);
 }

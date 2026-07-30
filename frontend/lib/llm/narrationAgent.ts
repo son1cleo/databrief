@@ -167,7 +167,13 @@ const TEXT_CHAPTER_COPY: Record<ChapterId, ChapterCopy> = {
   },
 };
 
-function chapterFragment(chapterId: ChapterId, isTextDoc: boolean): string {
+/** `hasQuestion` widens each chapter's word-budget target when there's no
+ * Focus Question Callout turn to fill that space (that turn is skipped
+ * entirely when no question was asked, see runStructuredNarrationTurns) --
+ * without this, a no-question report comes out ~100-150 words shorter and
+ * visibly thinner/shorter in page count than one with a question, for a
+ * reason that has nothing to do with the actual data. */
+function chapterFragment(chapterId: ChapterId, isTextDoc: boolean, hasQuestion: boolean): string {
   const copy = (isTextDoc ? TEXT_CHAPTER_COPY : STRUCTURED_CHAPTER_COPY)[chapterId];
   const title = defaultChapterTitle(chapterId);
   const chartRule = isTextDoc
@@ -176,6 +182,7 @@ function chapterFragment(chapterId: ChapterId, isTextDoc: boolean): string {
 (ranking/trend/correlation/distribution/dose_response/outlier types all support a chart; descriptive/data_quality \
 don't). Set findingRef to that finding's 0-based index in the findings array you were given. Place the chart block \
 immediately after the paragraph that discusses that finding.`;
+  const wordBudget = hasQuestion ? "roughly 300-500 words" : "roughly 350-550 words";
   return `SECTION: ${title} (id: "${chapterId}").
 
 This chapter covers: ${copy.role}
@@ -183,7 +190,7 @@ ${copy.connect}
 
 - If there's genuinely nothing relevant to this chapter, say so briefly (a sentence or two) rather than fabricating content.
 ${chartRule}
-- Keep this chapter to roughly 300-500 words.
+- Keep this chapter to ${wordBudget}.
 - citedFindingIndices: list every finding index you cited a number from (empty array for a document).`;
 }
 
@@ -297,10 +304,14 @@ async function callTurn<T>(
   providers: LlmProvider[],
   systemPrompt: string,
   userMessage: string,
-  schema: z.ZodType<T>
+  schema: z.ZodType<T>,
+  label: string
 ): Promise<{ result: T; providers: LlmProvider[] } | null> {
   const outcome = await runWithFallback(providers, systemPrompt, userMessage, schema);
-  if (!("provider" in outcome)) return null;
+  if (!("provider" in outcome)) {
+    console.log(`[narration] turn-failed label=${label} providers=${providers.map((p) => p.name).join(",")} errors=${JSON.stringify(outcome.providerErrors)}`);
+    return null;
+  }
 
   const pinned = providers.find((p) => p.name === outcome.provider);
   const reordered = pinned ? [pinned, ...providers.filter((p) => p !== pinned)] : providers;
@@ -320,9 +331,10 @@ async function callTurnGuarded<T>(
   baseUserMessage: string,
   schema: z.ZodType<T>,
   extractText: (result: T) => string,
-  historyText: string
+  historyText: string,
+  label: string
 ): Promise<{ result: T; providers: LlmProvider[] } | null> {
-  const first = await callTurn(providers, systemPrompt, baseUserMessage, schema);
+  const first = await callTurn(providers, systemPrompt, baseUserMessage, schema, label);
   if (!first) return null;
   if (!historyText) return first;
 
@@ -330,7 +342,7 @@ async function callTurnGuarded<T>(
   if (overlap.length === 0) return first;
 
   const retryMessage = `${baseUserMessage}${repetitionRetryNote(overlap)}`;
-  const retry = await callTurn(first.providers, systemPrompt, retryMessage, schema);
+  const retry = await callTurn(first.providers, systemPrompt, retryMessage, schema, `${label}-retry`);
   return retry ?? first;
 }
 
@@ -366,14 +378,14 @@ export async function runStructuredNarrationTurns(
   // check headline against its own hook directly, and retry once if they
   // overlap heavily (ensureDistinctHeadline below is still kept as a final
   // mechanical backstop in case the retry doesn't fully fix it).
-  let turn1 = await callTurn(providers, preamble, userMessage(CLIMAX_HOOK_FRAGMENT_STRUCTURED), climaxHookSchema);
+  let turn1 = await callTurn(providers, preamble, userMessage(CLIMAX_HOOK_FRAGMENT_STRUCTURED), climaxHookSchema, "climax-hook");
   if (!turn1) return null;
   providers = turn1.providers;
   const selfOverlap = findSharedPhrases(turn1.result.headline, turn1.result.hook);
   if (selfOverlap.length > 0) {
     const retryMessage = `${userMessage(CLIMAX_HOOK_FRAGMENT_STRUCTURED)}${repetitionRetryNote(selfOverlap)} The headline specifically \
 must not restate the hook's exact wording -- name the stakes or the actors instead of repeating the same clause.`;
-    const retry = await callTurn(providers, preamble, retryMessage, climaxHookSchema);
+    const retry = await callTurn(providers, preamble, retryMessage, climaxHookSchema, "climax-hook-retry");
     if (retry) {
       turn1 = retry;
       providers = retry.providers;
@@ -397,7 +409,8 @@ must not restate the hook's exact wording -- name the stakes or the actors inste
       userMessage(CALLOUT_FRAGMENT(question)),
       calloutSchema,
       (r) => r.focusQuestionCallout,
-      history.join(" ")
+      history.join(" "),
+      "callout"
     );
     if (!turn2) return null;
     providers = turn2.providers;
@@ -412,10 +425,11 @@ must not restate the hook's exact wording -- name the stakes or the actors inste
     const turn = await callTurnGuarded(
       providers,
       preamble,
-      userMessage(chapterFragment(chapterId, false)),
+      userMessage(chapterFragment(chapterId, false, Boolean(question))),
       chapterSchema,
       (r) => blocksText(r.blocks),
-      history.join(" ")
+      history.join(" "),
+      `chapter:${chapterId}`
     );
     if (!turn) return null;
     providers = turn.providers;
@@ -437,7 +451,8 @@ must not restate the hook's exact wording -- name the stakes or the actors inste
     userMessage(ACTIONS_FRAGMENT),
     actionsSchema,
     (r) => r.actions.join(" "),
-    history.join(" ")
+    history.join(" "),
+    "actions"
   );
   if (!turn6) return null;
 
@@ -476,14 +491,14 @@ export async function runTextNarrationTurns(
     return `${fragment}\n\nDocument text:\n${rawText}${alreadyPublishedNote(history)}`;
   }
 
-  let turn1 = await callTurn(providers, preamble, userMessage(CLIMAX_HOOK_FRAGMENT_TEXT), climaxHookSchema);
+  let turn1 = await callTurn(providers, preamble, userMessage(CLIMAX_HOOK_FRAGMENT_TEXT), climaxHookSchema, "climax-hook");
   if (!turn1) return null;
   providers = turn1.providers;
   const selfOverlap = findSharedPhrases(turn1.result.headline, turn1.result.hook);
   if (selfOverlap.length > 0) {
     const retryMessage = `${userMessage(CLIMAX_HOOK_FRAGMENT_TEXT)}${repetitionRetryNote(selfOverlap)} The headline specifically \
 must not restate the hook's exact wording -- name the stakes or the specifics instead of repeating the same clause.`;
-    const retry = await callTurn(providers, preamble, retryMessage, climaxHookSchema);
+    const retry = await callTurn(providers, preamble, retryMessage, climaxHookSchema, "climax-hook-retry");
     if (retry) {
       turn1 = retry;
       providers = retry.providers;
@@ -501,7 +516,8 @@ must not restate the hook's exact wording -- name the stakes or the specifics in
       userMessage(CALLOUT_FRAGMENT(question)),
       calloutSchema,
       (r) => r.focusQuestionCallout,
-      history.join(" ")
+      history.join(" "),
+      "callout"
     );
     if (!turn2) return null;
     providers = turn2.providers;
@@ -514,10 +530,11 @@ must not restate the hook's exact wording -- name the stakes or the specifics in
     const turn = await callTurnGuarded(
       providers,
       preamble,
-      userMessage(chapterFragment(chapterId, true)),
+      userMessage(chapterFragment(chapterId, true, Boolean(question))),
       chapterSchema,
       (r) => blocksText(r.blocks),
-      history.join(" ")
+      history.join(" "),
+      `chapter:${chapterId}`
     );
     if (!turn) return null;
     providers = turn.providers;
@@ -537,7 +554,8 @@ must not restate the hook's exact wording -- name the stakes or the specifics in
     userMessage(ACTIONS_FRAGMENT),
     actionsSchema,
     (r) => r.actions.join(" "),
-    history.join(" ")
+    history.join(" "),
+    "actions"
   );
   if (!turn6) return null;
 
