@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { MotionConfig } from "framer-motion";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
@@ -24,6 +25,7 @@ export default function RootLayout({
             <Toaster theme="dark" />
           </TooltipProvider>
         </MotionConfig>
+        <Analytics />
       </body>
     </html>
   );
