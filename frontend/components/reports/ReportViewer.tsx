@@ -13,6 +13,11 @@ interface StoryBlock {
 
 interface Chapter {
   id: string;
+  /** Verbatim question text(s) this chapter answers -- present only on
+   * reports generated after the question-driven redesign. Absent (undefined)
+   * on pre-redesign reports, which fall back to the single legacy Focus
+   * Question box below instead of a per-chapter label. */
+  questionLabel?: string | null;
   title: string;
   blocks: StoryBlock[];
 }
@@ -165,6 +170,11 @@ export function ReportViewer({ narration, findings, dataConfidence, question, ro
         {chapters.map((chapter) =>
           chapter.blocks.length > 0 ? (
             <section key={chapter.id} className="mt-12 border-t border-border-soft pt-8">
+              {chapter.questionLabel && (
+                <p className="mb-2 font-mono text-[11px] font-semibold tracking-[0.12em] text-brand uppercase">
+                  Answering <span className="normal-case text-muted-foreground">— {chapter.questionLabel}</span>
+                </p>
+              )}
               <h2 className="mb-4 font-display text-2xl font-bold tracking-tight text-balance text-foreground">
                 <RichText text={chapter.title} />
               </h2>

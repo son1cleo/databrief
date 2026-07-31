@@ -60,7 +60,7 @@ export interface ReportConfigRequest {
   pptx_theme?: string;
   apply_brand_kit?: boolean;
   industry?: string;
-  question?: string;
+  questions?: string[];
 }
 
 export interface ReportOut {

@@ -18,7 +18,7 @@ export async function createReport(config: ReportConfigRequest): Promise<ActionR
     pptxTheme: config.pptx_theme,
     applyBrandKit: config.apply_brand_kit,
     industry: config.industry,
-    question: config.question,
+    questions: config.questions,
   });
 
   if (!result.ok) return { success: false, status: result.status, message: result.message };

@@ -234,7 +234,7 @@ export function UploadWizard({ defaultIndustry, hasBrandKit }: UploadWizardProps
       pptx_theme: config.pptxTheme,
       apply_brand_kit: config.applyBrandKit,
       industry: config.industry,
-      question: config.question || undefined,
+      questions: config.questions,
     });
     if (result.success) {
       setReportId(result.data.id);

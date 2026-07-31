@@ -1,5 +1,6 @@
 import "server-only";
 import type { Finding } from "@/lib/analysis";
+import type { QuestionPlanEntry } from "@/lib/llm/schemas";
 
 export const IMPLICATION_TEMPLATES: Record<string, string> = {
   ranking: "A clear leader has emerged -- but the gap between first and the rest tells its own story.",
@@ -221,7 +222,14 @@ export interface StoryArc {
   climax: Finding | null;
   implication: string;
   action: string;
-  question: string | null;
+  /** All questions this report answers -- either user-supplied or
+   * auto-generated when the user asked none. Empty when there's truly
+   * nothing to structure the report around (planning/auto-gen both failed). */
+  questions: string[];
+  /** The plan that decided which analysis tools ran for each question
+   * (lib/llm/planner.ts). Null for raw-text uploads (no tools to plan
+   * against) or when planning never ran. */
+  plan: QuestionPlanEntry[] | null;
   /** 0-100, rule-based (see computeDataConfidence); null when there's
    * nothing to derive a score from (no findings / raw-text upload). */
   dataConfidence: number | null;
@@ -237,8 +245,11 @@ export function buildStoryArc(
   rowCount: number | null,
   columnCount: number | null,
   columns: string[],
-  question: string | null = null
+  questions: string[] = [],
+  plan: QuestionPlanEntry[] | null = null
 ): StoryArc {
+  const question = questions[0] ?? null;
+
   if (findings.length === 0) {
     return {
       hook: "This dataset didn't surface any statistically notable findings.",
@@ -247,7 +258,8 @@ export function buildStoryArc(
       climax: null,
       implication: "More data or a different cut may be needed to find a story here.",
       action: "Try uploading a richer dataset or asking a more specific question.",
-      question,
+      questions,
+      plan,
       dataConfidence: null,
       rowCount,
       columnCount,
@@ -268,7 +280,8 @@ export function buildStoryArc(
     climax,
     implication: IMPLICATION_TEMPLATES[climax.type] ?? IMPLICATION_TEMPLATES.descriptive,
     action: ACTION_TEMPLATES[climax.type] ?? ACTION_TEMPLATES.descriptive,
-    question,
+    questions,
+    plan,
     dataConfidence: computeDataConfidence(findings),
     rowCount,
     columnCount,
@@ -278,7 +291,7 @@ export function buildStoryArc(
 /** For unstructured uploads (PDF/DOCX/TXT/image) — no pre-computed Findings
  * exist, so the raw extracted text is handed to the LLM to find the
  * interesting angle itself rather than narrating fabricated statistics. */
-export function buildTextStoryArc(text: string, question: string | null = null): StoryArc {
+export function buildTextStoryArc(text: string, questions: string[] = []): StoryArc {
   const wordCount = text.split(/\s+/).filter(Boolean).length;
   return {
     hook: "Here's what stood out in this document.",
@@ -287,7 +300,8 @@ export function buildTextStoryArc(text: string, question: string | null = null):
     climax: null,
     implication: "",
     action: "",
-    question,
+    questions,
+    plan: null,
     dataConfidence: null,
     rowCount: null,
     columnCount: null,

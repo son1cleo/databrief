@@ -4,7 +4,7 @@ import { Inngest } from "inngest";
 export interface GenerateReportEventData {
   reportId: string;
   industry: string | null;
-  question: string | null;
+  questions: string[];
   formats: string[];
 }
 

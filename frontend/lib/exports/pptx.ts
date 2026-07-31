@@ -1,7 +1,7 @@
 import "server-only";
 import PptxGenJS from "pptxgenjs";
 import type { Finding } from "@/lib/analysis";
-import type { Chapter, ChapterId } from "@/lib/llm/schemas";
+import type { Chapter } from "@/lib/llm/schemas";
 import { chartBase64, pngDimensions, type PptxExportData } from "./types";
 import { parseInlineMarkdown } from "@/lib/markdown";
 
@@ -60,15 +60,11 @@ function containFit(
   return { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h };
 }
 
-function chapterEyebrow(id: ChapterId): string {
-  switch (id) {
-    case "macro_trend":
-      return "CHAPTER I — THE MACRO TREND";
-    case "anomalies":
-      return "CHAPTER II — ANOMALIES & OUTLIERS";
-    case "correlated_drivers":
-      return "CHAPTER III — CORRELATED DRIVERS";
-  }
+/** Chapters are no longer a fixed 3-id set (see lib/llm/schemas.ts's Chapter
+ * interface) -- the eyebrow is just the chapter's own title, uppercased,
+ * rather than a lookup keyed on a fixed id. */
+function chapterEyebrow(title: string): string {
+  return title.toUpperCase();
 }
 
 interface Theme {
@@ -199,7 +195,7 @@ class SlideBuilder {
    * alongside the first chart the chapter references, if any. */
   chapterSlide(chapter: Chapter, findings: Finding[]): void {
     const slide = this.newSlide();
-    this.addText(slide, chapterEyebrow(chapter.id), { x: 1, y: 0.5, w: 10, h: 0.5, size: 12, color: this.accent });
+    this.addText(slide, chapterEyebrow(chapter.title), { x: 1, y: 0.5, w: 10, h: 0.5, size: 12, color: this.accent });
     this.addText(slide, chapter.title, { x: 1, y: 0.95, w: 11.3, h: 0.8, size: 24, bold: true, font: this.fontHeading });
 
     const textLines: string[] = [];

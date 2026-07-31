@@ -5,15 +5,13 @@ import type { LlmProvider } from "./providers";
 import { runWithFallback } from "./fallbackGraph";
 import {
   climaxHookSchema,
-  calloutSchema,
-  chapterSchema,
+  chapterTurnSchema,
   actionsSchema,
-  CHAPTER_IDS,
-  chapterForFindingType,
   type Chapter,
-  type ChapterId,
+  type ChapterTurn,
   type StoryBlock,
   type StoryNarrationResult,
+  type QuestionPlanEntry,
 } from "./schemas";
 import { buildFindingsJson } from "./findingFacts";
 import { stripLeadIn, ensureDistinctHeadline, type StoryArc } from "@/lib/story";
@@ -27,10 +25,15 @@ import { stripLeadIn, ensureDistinctHeadline, type StoryArc } from "@/lib/story"
 // a real bug observed in production (report4.pdf: the same GPA/study-hours
 // correlation restated near-verbatim in the hook, the focus answer, and
 // Chapter I). This module replaces that single call with a fixed, code-driven
-// sequence of up to 6 smaller calls -- never model-controlled, no loop the
-// model can extend -- where each later call is shown what earlier calls
-// already wrote and told not to restate it. See docs/PROJECT_CONTEXT.md and
-// the plan this was built from for the full rationale.
+// sequence of calls -- never model-controlled, no loop the model can extend
+// -- where each later call is shown what earlier calls already wrote and
+// told not to restate it.
+//
+// Chapters are now built one per question (or question-cluster) from the
+// report's question plan (storyArc.plan), not from a fixed 3-chapter
+// dataset-wide template -- a chapter's job is to answer its question
+// directly, not to summarize a generic theme. See questionChapterFragment
+// and the loop in runStructuredNarrationTurns.
 // ---------------------------------------------------------------------------
 
 const ACCESSIBILITY_RULE = `- Write for a mixed audience of technical and non-technical readers: the first time a \
@@ -121,79 +124,6 @@ Set climaxIndex to null (there is no findings array for a document).
 - If the document sets up an expectation the later text breaks, build toward that reveal rather than stating it upfront.
 - citedFindingIndices: leave this as an empty array (there are no findings for a document).`;
 
-const CALLOUT_FRAGMENT = (question: string) => `SECTION: Focus Question Callout.
-
-The user specifically asked: "${question}"
-
-Answer it directly, citing real numbers or specifics as evidence. If the honest answer \
-overlaps with something already published (see above), you may restate the core number since \
-evading the real answer to avoid repetition would be worse -- but pair it with evidence that \
-hasn't appeared yet (sample size, a comparison point, a confidence level, or supporting detail), \
-rather than repeating the same sentence verbatim. Keep this to 80-150 words.
-- citedFindingIndices: list every finding index you cited (empty array for a document).`;
-
-interface ChapterCopy {
-  role: string;
-  connect: string;
-}
-
-const STRUCTURED_CHAPTER_COPY: Record<ChapterId, ChapterCopy> = {
-  macro_trend: {
-    role: "the baseline/overall direction in the data -- what's the main trend or pattern most findings agree on.",
-    connect: "This is the first chapter -- it sets the baseline the rest of the report will build on.",
-  },
-  anomalies: {
-    role: "outliers, surprises, or things that break the expected pattern.",
-    connect: "Reference the baseline trend from Chapter I when explaining why this break matters -- don't write it as a standalone summary.",
-  },
-  correlated_drivers: {
-    role: "relationships between variables -- what's driving what, and which variable is most responsible for the trend and the anomalies already discussed.",
-    connect: "Explain the variable most responsible for both the baseline trend and the anomalies already covered -- this chapter should resolve, not repeat, what came before.",
-  },
-};
-
-const TEXT_CHAPTER_COPY: Record<ChapterId, ChapterCopy> = {
-  macro_trend: {
-    role: "the document's main narrative or overall theme.",
-    connect: "This is the first chapter -- it sets up the main narrative.",
-  },
-  anomalies: {
-    role: "the most surprising or noteworthy specific details (cite exact figures, quotes, or claims, not paraphrased generalities).",
-    connect: "Show what breaks or surprises within the narrative established in Chapter I.",
-  },
-  correlated_drivers: {
-    role: "how different parts of the document connect or relate to each other. If nothing meaningful connects, keep this chapter brief rather than forcing it.",
-    connect: "Explain why the surprise from Chapter II matters in light of Chapter I's narrative.",
-  },
-};
-
-/** `hasQuestion` widens each chapter's word-budget target when there's no
- * Focus Question Callout turn to fill that space (that turn is skipped
- * entirely when no question was asked, see runStructuredNarrationTurns) --
- * without this, a no-question report comes out ~100-150 words shorter and
- * visibly thinner/shorter in page count than one with a question, for a
- * reason that has nothing to do with the actual data. */
-function chapterFragment(chapterId: ChapterId, isTextDoc: boolean, hasQuestion: boolean): string {
-  const copy = (isTextDoc ? TEXT_CHAPTER_COPY : STRUCTURED_CHAPTER_COPY)[chapterId];
-  const title = defaultChapterTitle(chapterId);
-  const chartRule = isTextDoc
-    ? `- Blocks are heading/paragraph/list only -- there are no findings/charts for a document, never emit a "chart" block.`
-    : `- CHARTS ARE REQUIRED: include at least one "chart" block for a finding with meaningful data behind it \
-(ranking/trend/correlation/distribution/dose_response/outlier types all support a chart; descriptive/data_quality \
-don't). Set findingRef to that finding's 0-based index in the findings array you were given. Place the chart block \
-immediately after the paragraph that discusses that finding.`;
-  const wordBudget = hasQuestion ? "roughly 300-500 words" : "roughly 350-550 words";
-  return `SECTION: ${title} (id: "${chapterId}").
-
-This chapter covers: ${copy.role}
-${copy.connect}
-
-- If there's genuinely nothing relevant to this chapter, say so briefly (a sentence or two) rather than fabricating content.
-${chartRule}
-- Keep this chapter to ${wordBudget}.
-- citedFindingIndices: list every finding index you cited a number from (empty array for a document).`;
-}
-
 const ACTIONS_FRAGMENT = `SECTION: Strategic Actions.
 
 Write exactly 3 concrete, prescriptive next steps ("action pillars"). Each must be tied to a \
@@ -201,15 +131,133 @@ specific finding's actual numbers (or a specific document detail) already discus
 report -- not generic advice that could apply to any dataset. Keep each to roughly 15-30 words.
 - citedFindingIndices: list every finding index you cited (empty array for a document).`;
 
-function defaultChapterTitle(id: ChapterId): string {
-  switch (id) {
-    case "macro_trend":
-      return "Chapter I — The Macro Trend";
-    case "anomalies":
-      return "Chapter II — Anomalies & Outliers";
-    case "correlated_drivers":
-      return "Chapter III — Correlated Drivers";
+const ROMAN_NUMERALS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+function toRoman(n: number): string {
+  return ROMAN_NUMERALS[n - 1] ?? String(n);
+}
+
+const DEPTH_WORD_BUDGET: Record<QuestionPlanEntry["depth"], string> = {
+  brief: "roughly 120-200 words",
+  standard: "roughly 250-400 words",
+  deep: "roughly 400-600 words",
+};
+
+/** One chapter turn per question (or question-cluster). Replaces the old
+ * standalone "Focus Question Callout" turn entirely -- the direct answer now
+ * opens the chapter itself instead of living in a separate box before a
+ * generic, dataset-wide chapter. */
+function questionChapterFragment(
+  chapterNumber: number,
+  questionTexts: string[],
+  depth: QuestionPlanEntry["depth"],
+  isFirst: boolean,
+  isTextDoc: boolean
+): string {
+  const qLine =
+    questionTexts.length === 1
+      ? `The reader specifically asked: "${questionTexts[0]}"`
+      : `The reader asked these related questions -- answer them together: ${questionTexts.map((q) => `"${q}"`).join("; ")}`;
+  const chartRule = isTextDoc
+    ? `- Blocks are heading/paragraph/list only -- there are no findings/charts for a document, never emit a "chart" block.`
+    : `- CHARTS ARE REQUIRED if there's a chart-able finding behind this question (ranking/trend/correlation/distribution/dose_response/outlier \
+types all support a chart; descriptive/data_quality don't). Set findingRef to that finding's 0-based index in the findings array you were given.`;
+
+  return `SECTION: Chapter ${toRoman(chapterNumber)}.
+
+${qLine}
+
+Open with a direct, concrete answer citing real numbers -- the question itself is already shown to the reader \
+separately, so don't restate it as a heading or repeat "the answer is." Then give the supporting evidence and \
+context that makes the answer credible and actionable.
+${isFirst ? "This is the report's opening chapter -- it also sets the overall tone." : "Connect back to what's already published where relevant -- don't repeat it, build on it."}
+- subtitle: a short, specific subtitle for this chapter (not a restatement of the question verbatim).
+- If there's genuinely nothing relevant to answer this from the dataset, say so briefly rather than fabricating content.
+${chartRule}
+- Keep this chapter to ${DEPTH_WORD_BUDGET[depth]}.
+- citedFindingIndices: list every finding index you cited a number from (empty array for a document).`;
+}
+
+/** Trailing chapter for leftover dataset-wide content not tied to any
+ * question. `forced` (no question plan exists at all) makes this the
+ * report's only chapter, so it must always produce real content -- the
+ * pre-redesign pipeline's "always show 3 generic chapters" behavior
+ * collapses into this single path instead of running in parallel with the
+ * question-driven one. When not forced, it's a genuinely optional add-on
+ * that's allowed to come back empty. */
+function contextChapterFragment(chapterNumber: number, isTextDoc: boolean, forced: boolean): string {
+  const chartRule = isTextDoc
+    ? `- Blocks are heading/paragraph/list only -- there are no findings/charts for a document, never emit a "chart" block.`
+    : `- Include at least one "chart" block if there's a chart-able finding worth showing (ranking/trend/correlation/distribution/dose_response/outlier).`;
+
+  if (forced) {
+    return `SECTION: Chapter ${toRoman(chapterNumber)} (the report's only chapter -- no specific question was asked or could be answered).
+
+Cover the most interesting, consequential things in this dataset${isTextDoc ? " or document" : ""}: the main trend \
+or pattern, any real surprises or anomalies, and what's driving what. Write it as one cohesive chapter, not three \
+separate mini-sections.
+- subtitle: a short, specific subtitle for this chapter.
+${chartRule}
+- Keep this chapter to roughly 350-550 words.
+- citedFindingIndices: list every finding index you cited a number from (empty array for a document).`;
   }
+
+  return `SECTION: Chapter ${toRoman(chapterNumber)} (Additional Context).
+
+Cover only genuinely important things about this dataset${isTextDoc ? " or document" : ""} that haven't come up \
+in answering the questions above -- e.g. a serious data-quality problem, or a strong pattern nobody asked about \
+but that matters. If there's truly nothing left worth flagging, return an empty blocks array rather than padding \
+this out.
+- subtitle: a short, specific subtitle for this chapter.
+${chartRule}
+- Keep this chapter to roughly 100-200 words if there's something worth including.
+- citedFindingIndices: list every finding index you cited a number from (empty array for a document).`;
+}
+
+function buildContextChapter(chapterNumber: number, result: ChapterTurn): Chapter {
+  return {
+    id: "context",
+    questionIndices: [],
+    questionLabel: null,
+    title: `Chapter ${toRoman(chapterNumber)} — ${result.subtitle.trim() || "Additional Context"}`,
+    blocks: result.blocks,
+    citedFindingIndices: result.citedFindingIndices,
+  };
+}
+
+/** Zero-LLM-call chapter for a question the plan flagged as unanswerable
+ * from this dataset -- cost scales with answerable questions, not raw
+ * question count. */
+function buildUnanswerableChapter(id: string, chapterNumber: number, entry: QuestionPlanEntry, questionTexts: string[]): Chapter {
+  const label = questionTexts.join(" / ");
+  return {
+    id,
+    questionIndices: entry.questionIndices,
+    questionLabel: label || null,
+    title: `Chapter ${toRoman(chapterNumber)} — ${label || "Unanswerable"}`,
+    blocks: [
+      {
+        type: "paragraph",
+        text: entry.unanswerableReason || "This dataset doesn't contain the columns needed to answer this question.",
+      },
+    ],
+    citedFindingIndices: [],
+  };
+}
+
+/** True when there's a genuinely important dataset-wide finding not tied to
+ * any question -- a real data-quality problem, or a strong pattern nobody
+ * asked about but that's uncited so far. Deliberately narrow so the
+ * "Additional Context" chapter stays rare, not a reversion to a whole-
+ * dataset dump. */
+function shouldIncludeContextChapter(findings: Finding[], cited: Set<number>): boolean {
+  let badQuality = false;
+  let strongUncited = false;
+  findings.forEach((f, idx) => {
+    if (f.questionIndices.length > 0) return;
+    if (f.type === "data_quality" && typeof f.value === "number" && f.value < 0.8) badQuality = true;
+    if (f.magnitude > 0.75 && !cited.has(idx)) strongUncited = true;
+  });
+  return badQuality || strongUncited;
 }
 
 /** Caps at 3 action items, deduplicated. Does NOT pad short lists with a
@@ -228,7 +276,9 @@ function normalizeActions(actions: string[], fallback: string): string[] {
 
 /** Guarantees the climax finding gets a chart, even if the chapter turn that
  * should have referenced it didn't. A report with no visualizations at all
- * is a real product defect, so this doesn't rely on prompt compliance. */
+ * is a real product defect, so this doesn't rely on prompt compliance.
+ * Targets whichever chapter shares a question with the climax finding,
+ * falling back to the "context" chapter, then the first chapter. */
 function ensureClimaxChart(chapters: Chapter[], climaxIndex: number | null, findings: Finding[]): Chapter[] {
   if (climaxIndex === null) return chapters;
   const alreadyReferenced = chapters.some((ch) => ch.blocks.some((b) => b.type === "chart" && b.findingRef === climaxIndex));
@@ -237,9 +287,14 @@ function ensureClimaxChart(chapters: Chapter[], climaxIndex: number | null, find
   const climax = findings[climaxIndex];
   if (!climax) return chapters;
 
-  const targetId = chapterForFindingType(climax.type);
+  const target =
+    chapters.find((ch) => climax.questionIndices.some((qi) => ch.questionIndices.includes(qi))) ??
+    chapters.find((ch) => ch.id === "context") ??
+    chapters[0];
+  if (!target) return chapters;
+
   return chapters.map((ch) =>
-    ch.id === targetId ? { ...ch, blocks: [...ch.blocks, { type: "chart" as const, findingRef: climaxIndex }] } : ch
+    ch === target ? { ...ch, blocks: [...ch.blocks, { type: "chart" as const, findingRef: climaxIndex }] } : ch
   );
 }
 
@@ -346,18 +401,16 @@ async function callTurnGuarded<T>(
   return retry ?? first;
 }
 
-/** Structured (findings-based) narration path: up to 6 turns -- climax+hook,
- * callout (skipped if no question was asked), one turn per chapter, actions.
- * 6 is a ceiling, not a target -- the callout turn simply isn't called when
- * there's no question, so a report with no question uses 5 calls, not 6.
- * Any single turn's total provider-chain exhaustion aborts the whole
- * sequence (returns null) rather than letting later turns retry a chain
- * that just proved to be down -- the caller falls back to
+/** Structured (findings-based) narration path: climax+hook, then one turn
+ * per question/question-cluster from storyArc.plan (an unanswerable entry
+ * costs zero LLM calls), then an optional/forced trailing "context" chapter,
+ * then actions. Any single required turn's total provider-chain exhaustion
+ * aborts the whole sequence (returns null) rather than letting later turns
+ * retry a chain that just proved to be down -- the caller falls back to
  * fallbackNarrationResult() in that case. */
 export async function runStructuredNarrationTurns(
   storyArc: StoryArc,
   industry: string | null | undefined,
-  question: string | null | undefined,
   initialProviders: LlmProvider[]
 ): Promise<StoryNarrationResult | null> {
   const findings = storyArc.findings;
@@ -400,52 +453,83 @@ must not restate the hook's exact wording -- name the stakes or the actors inste
   history.push(`HEADLINE: ${headline}\nHOOK: ${hook}`);
   for (const idx of turn1.result.citedFindingIndices) cited.add(idx);
 
-  // Turn 2: focus question callout -- skipped entirely if no question
-  let focusQuestionCallout: string | null = null;
-  if (question) {
-    const turn2 = await callTurnGuarded(
-      providers,
-      preamble,
-      userMessage(CALLOUT_FRAGMENT(question)),
-      calloutSchema,
-      (r) => r.focusQuestionCallout,
-      history.join(" "),
-      "callout"
-    );
-    if (!turn2) return null;
-    providers = turn2.providers;
-    focusQuestionCallout = turn2.result.focusQuestionCallout || null;
-    if (focusQuestionCallout) history.push(`FOCUS QUESTION ANSWER: ${focusQuestionCallout}`);
-    for (const idx of turn2.result.citedFindingIndices) cited.add(idx);
-  }
-
-  // Turns 3-5: one per chapter, in canonical order
+  // One turn per question/question-cluster (unanswerable entries cost zero
+  // LLM calls). Falls to a single forced "context" chapter below when there
+  // was no plan at all.
+  const plan = storyArc.plan ?? [];
   const chapters: Chapter[] = [];
-  for (const chapterId of CHAPTER_IDS) {
+  let chapterNumber = 1;
+
+  for (const entry of plan) {
+    const questionTexts = entry.questionIndices.map((i) => storyArc.questions[i]).filter((q): q is string => Boolean(q));
+    const label = questionTexts.join(" / ");
+    const id = `q${entry.questionIndices[0] ?? chapters.length}`;
+
+    if (!entry.answerable) {
+      chapters.push(buildUnanswerableChapter(id, chapterNumber, entry, questionTexts));
+      chapterNumber++;
+      continue;
+    }
+
     const turn = await callTurnGuarded(
       providers,
       preamble,
-      userMessage(chapterFragment(chapterId, false, Boolean(question))),
-      chapterSchema,
+      userMessage(questionChapterFragment(chapterNumber, questionTexts, entry.depth, chapters.length === 0, false)),
+      chapterTurnSchema,
       (r) => blocksText(r.blocks),
       history.join(" "),
-      `chapter:${chapterId}`
+      `chapter:${id}`
     );
     if (!turn) return null;
     providers = turn.providers;
     const chapter: Chapter = {
-      id: chapterId,
-      title: turn.result.title.trim() || defaultChapterTitle(chapterId),
+      id,
+      questionIndices: entry.questionIndices,
+      questionLabel: label || null,
+      title: `Chapter ${toRoman(chapterNumber)} — ${turn.result.subtitle.trim() || label}`,
       blocks: turn.result.blocks,
       citedFindingIndices: turn.result.citedFindingIndices,
     };
     chapters.push(chapter);
     history.push(chapterHistoryText(chapter));
     for (const idx of chapter.citedFindingIndices) cited.add(idx);
+    chapterNumber++;
   }
 
-  // Turn 6: actions
-  const turn6 = await callTurnGuarded(
+  // Trailing "context" chapter: forced (and required) when there's no plan
+  // at all -- this collapses the old "always show 3 generic chapters"
+  // behavior into a single code path instead of running it in parallel with
+  // the question-driven one. Otherwise a genuinely optional add-on that's
+  // allowed to fail or come back empty without aborting the report.
+  const forced = plan.length === 0;
+  if (forced || shouldIncludeContextChapter(findings, cited)) {
+    const turn = await callTurnGuarded(
+      providers,
+      preamble,
+      userMessage(contextChapterFragment(chapterNumber, false, forced)),
+      chapterTurnSchema,
+      (r) => blocksText(r.blocks),
+      history.join(" "),
+      "chapter:context"
+    );
+    if (forced) {
+      if (!turn) return null;
+      providers = turn.providers;
+      const chapter = buildContextChapter(chapterNumber, turn.result);
+      chapters.push(chapter);
+      history.push(chapterHistoryText(chapter));
+      for (const idx of chapter.citedFindingIndices) cited.add(idx);
+    } else if (turn && turn.result.blocks.length > 0) {
+      providers = turn.providers;
+      const chapter = buildContextChapter(chapterNumber, turn.result);
+      chapters.push(chapter);
+      history.push(chapterHistoryText(chapter));
+      for (const idx of chapter.citedFindingIndices) cited.add(idx);
+    }
+  }
+
+  // Final turn: actions
+  const turnActions = await callTurnGuarded(
     providers,
     preamble,
     userMessage(ACTIONS_FRAGMENT),
@@ -454,7 +538,7 @@ must not restate the hook's exact wording -- name the stakes or the actors inste
     history.join(" "),
     "actions"
   );
-  if (!turn6) return null;
+  if (!turnActions) return null;
 
   const finalChapters = ensureClimaxChart(chapters, climaxIndex, findings);
   return {
@@ -462,22 +546,22 @@ must not restate the hook's exact wording -- name the stakes or the actors inste
     hook,
     climaxIndex,
     chapters: finalChapters,
-    focusQuestionCallout: question ? focusQuestionCallout : null,
+    focusQuestionCallout: null,
     implication: storyArc.implication,
-    actions: normalizeActions(turn6.result.actions, storyArc.action),
+    actions: normalizeActions(turnActions.result.actions, storyArc.action),
     wordCount: countWordsInChapters(finalChapters),
   };
 }
 
 /** Raw-text (PDF/DOCX/TXT upload, no findings array) narration path. Same
- * mechanism as the structured path -- fixed turns, shared textual history --
- * but no findings catalog and no chart/citedFindingIndices content (raw_text
- * is already fully present in every turn's prompt, so there's nothing to
- * lazily reference or fetch). */
+ * mechanism as the structured path -- fixed turns, shared textual history,
+ * one chapter per question -- but no findings catalog, no tool-selection
+ * plan (there's nothing to plan against), and no chart/citedFindingIndices
+ * content (raw_text is already fully present in every turn's prompt, so
+ * there's nothing to lazily reference or fetch). */
 export async function runTextNarrationTurns(
   storyArc: StoryArc,
   industry: string | null | undefined,
-  question: string | null | undefined,
   initialProviders: LlmProvider[]
 ): Promise<StoryNarrationResult | null> {
   const industryName = industry || "general business";
@@ -508,47 +592,59 @@ must not restate the hook's exact wording -- name the stakes or the specifics in
   const headline = ensureDistinctHeadline(stripLeadIn(turn1.result.headline || storyArc.hook), hook);
   history.push(`HEADLINE: ${headline}\nHOOK: ${hook}`);
 
-  let focusQuestionCallout: string | null = null;
-  if (question) {
-    const turn2 = await callTurnGuarded(
-      providers,
-      preamble,
-      userMessage(CALLOUT_FRAGMENT(question)),
-      calloutSchema,
-      (r) => r.focusQuestionCallout,
-      history.join(" "),
-      "callout"
-    );
-    if (!turn2) return null;
-    providers = turn2.providers;
-    focusQuestionCallout = turn2.result.focusQuestionCallout || null;
-    if (focusQuestionCallout) history.push(`FOCUS QUESTION ANSWER: ${focusQuestionCallout}`);
-  }
-
+  const questions = storyArc.questions ?? [];
   const chapters: Chapter[] = [];
-  for (const chapterId of CHAPTER_IDS) {
+  let chapterNumber = 1;
+
+  for (let i = 0; i < questions.length; i++) {
     const turn = await callTurnGuarded(
       providers,
       preamble,
-      userMessage(chapterFragment(chapterId, true, Boolean(question))),
-      chapterSchema,
+      userMessage(questionChapterFragment(chapterNumber, [questions[i]], "standard", chapters.length === 0, true)),
+      chapterTurnSchema,
       (r) => blocksText(r.blocks),
       history.join(" "),
-      `chapter:${chapterId}`
+      `chapter:q${i}`
     );
     if (!turn) return null;
     providers = turn.providers;
     const chapter: Chapter = {
-      id: chapterId,
-      title: turn.result.title.trim() || defaultChapterTitle(chapterId),
+      id: `q${i}`,
+      questionIndices: [i],
+      questionLabel: questions[i],
+      title: `Chapter ${toRoman(chapterNumber)} — ${turn.result.subtitle.trim() || questions[i]}`,
       blocks: turn.result.blocks,
       citedFindingIndices: [],
     };
     chapters.push(chapter);
     history.push(chapterHistoryText(chapter));
+    chapterNumber++;
   }
 
-  const turn6 = await callTurnGuarded(
+  const forced = questions.length === 0;
+  const contextTurn = await callTurnGuarded(
+    providers,
+    preamble,
+    userMessage(contextChapterFragment(chapterNumber, true, forced)),
+    chapterTurnSchema,
+    (r) => blocksText(r.blocks),
+    history.join(" "),
+    "chapter:context"
+  );
+  if (forced) {
+    if (!contextTurn) return null;
+    providers = contextTurn.providers;
+    const chapter = buildContextChapter(chapterNumber, contextTurn.result);
+    chapters.push(chapter);
+    history.push(chapterHistoryText(chapter));
+  } else if (contextTurn && contextTurn.result.blocks.length > 0) {
+    providers = contextTurn.providers;
+    const chapter = buildContextChapter(chapterNumber, contextTurn.result);
+    chapters.push(chapter);
+    history.push(chapterHistoryText(chapter));
+  }
+
+  const turnActions = await callTurnGuarded(
     providers,
     preamble,
     userMessage(ACTIONS_FRAGMENT),
@@ -557,16 +653,16 @@ must not restate the hook's exact wording -- name the stakes or the specifics in
     history.join(" "),
     "actions"
   );
-  if (!turn6) return null;
+  if (!turnActions) return null;
 
   return {
     headline,
     hook,
     climaxIndex: null,
     chapters,
-    focusQuestionCallout: question ? focusQuestionCallout : null,
+    focusQuestionCallout: null,
     implication: storyArc.implication,
-    actions: normalizeActions(turn6.result.actions, storyArc.action),
+    actions: normalizeActions(turnActions.result.actions, storyArc.action),
     wordCount: countWordsInChapters(chapters),
   };
 }

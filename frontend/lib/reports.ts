@@ -80,13 +80,18 @@ export type CreateReportResult =
   | { ok: true; report: Report }
   | { ok: false; status: number; message: string };
 
+// Sanity cap on raw user input, independent of MAX_QUESTIONS (the planner's
+// own cap on how many questions actually get a chapter) -- this just bounds
+// how much gets stored/sent to Inngest before planning ever runs.
+const RAW_QUESTION_CAP = 10;
+
 export interface CreateReportParams {
   uploadId: string;
   formats?: string[];
   pptxTheme?: string | null;
   applyBrandKit?: boolean;
   industry?: string | null;
-  question?: string | null;
+  questions?: string[];
 }
 
 /** Ports the plan-limit/overage gating + report creation from
@@ -100,7 +105,7 @@ export async function createReportForUser(user: User, params: CreateReportParams
   const pptxTheme = params.pptxTheme ?? "boardroom";
   const applyBrandKit = params.applyBrandKit ?? false;
   const industry = params.industry ?? null;
-  const question = params.question ?? null;
+  const questions = (params.questions ?? []).map((q) => q.trim()).filter(Boolean).slice(0, RAW_QUESTION_CAP);
 
   const overLimit = user.reportsUsed >= user.reportsLimit;
   let isOverage = false;
@@ -125,7 +130,7 @@ export async function createReportForUser(user: User, params: CreateReportParams
   const updatedUser = await prisma.user.update({ where: { id: user.id }, data: { reportsUsed: { increment: 1 } } });
   if (isOverage) await reportOverageUsage(updatedUser);
 
-  const eventData = { reportId: report.id, industry, question, formats };
+  const eventData = { reportId: report.id, industry, questions, formats };
   try {
     await inngest.send({ name: GENERATE_REPORT_EVENT, data: eventData });
   } catch {

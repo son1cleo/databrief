@@ -77,9 +77,16 @@ export function fallbackNarrationResult(storyArc: StoryArc): StoryNarrationResul
     )
   );
   const chapters: Chapter[] = [
-    { id: "macro_trend", title: "Chapter I — The Macro Trend", blocks: macroTrend, citedFindingIndices: [] },
-    { id: "anomalies", title: "Chapter II — Anomalies & Outliers", blocks: anomalies, citedFindingIndices: [] },
-    { id: "correlated_drivers", title: "Chapter III — Correlated Drivers", blocks: correlatedDrivers, citedFindingIndices: [] },
+    { id: "macro_trend", questionIndices: [], questionLabel: null, title: "Chapter I — The Macro Trend", blocks: macroTrend, citedFindingIndices: [] },
+    { id: "anomalies", questionIndices: [], questionLabel: null, title: "Chapter II — Anomalies & Outliers", blocks: anomalies, citedFindingIndices: [] },
+    {
+      id: "correlated_drivers",
+      questionIndices: [],
+      questionLabel: null,
+      title: "Chapter III — Correlated Drivers",
+      blocks: correlatedDrivers,
+      citedFindingIndices: [],
+    },
   ];
 
   const hook = stripLeadIn(storyArc.hook);
@@ -89,7 +96,7 @@ export function fallbackNarrationResult(storyArc: StoryArc): StoryNarrationResul
     hook,
     climaxIndex: climaxIdx >= 0 ? climaxIdx : null,
     chapters,
-    focusQuestionCallout: questionAnswer(findings, storyArc.question),
+    focusQuestionCallout: questionAnswer(findings, storyArc.questions[0] ?? null),
     implication: storyArc.implication,
     // Only one rule-based action exists without an LLM to generate 3
     // distinct pillars -- return what's real (0 or 1) rather than padding
@@ -104,9 +111,23 @@ function fallbackTextNarrationResult(storyArc: StoryArc): StoryNarrationResult {
   const snippet = (storyArc.raw_text || "").slice(0, 1500);
 
   const chapters: Chapter[] = [
-    { id: "macro_trend", title: "Chapter I — The Macro Trend", blocks: [{ type: "paragraph", text: storyArc.context || "" }], citedFindingIndices: [] },
-    { id: "anomalies", title: "Chapter II — Anomalies & Outliers", blocks: [{ type: "paragraph", text: snippet }], citedFindingIndices: [] },
-    { id: "correlated_drivers", title: "Chapter III — Correlated Drivers", blocks: [], citedFindingIndices: [] },
+    {
+      id: "macro_trend",
+      questionIndices: [],
+      questionLabel: null,
+      title: "Chapter I — The Macro Trend",
+      blocks: [{ type: "paragraph", text: storyArc.context || "" }],
+      citedFindingIndices: [],
+    },
+    {
+      id: "anomalies",
+      questionIndices: [],
+      questionLabel: null,
+      title: "Chapter II — Anomalies & Outliers",
+      blocks: [{ type: "paragraph", text: snippet }],
+      citedFindingIndices: [],
+    },
+    { id: "correlated_drivers", questionIndices: [], questionLabel: null, title: "Chapter III — Correlated Drivers", blocks: [], citedFindingIndices: [] },
   ];
 
   return {

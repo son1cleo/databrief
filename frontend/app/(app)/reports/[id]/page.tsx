@@ -36,10 +36,21 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
     findings?: unknown[];
     dataConfidence?: number | null;
     question?: string | null;
+    questions?: string[] | null;
     rowCount?: number | null;
     columnCount?: number | null;
   } | null;
   const findingsCount = storyJson?.findings?.length;
+  // Pre-redesign reports stored a single `question` string; current ones
+  // store `questions: string[]`. Only the first is passed down for the
+  // legacy single-callout display path -- ReportViewer renders per-chapter
+  // labels instead whenever the narration's chapters actually carry them.
+  const legacyQuestion = typeof storyJson?.question === "string" ? storyJson.question : null;
+  const questions: string[] = Array.isArray(storyJson?.questions)
+    ? storyJson.questions
+    : legacyQuestion
+      ? [legacyQuestion]
+      : [];
 
   return (
     <div className="space-y-5">
@@ -128,7 +139,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
           narration={(report.story_blocks as never) ?? {}}
           findings={(storyJson?.findings as never[]) ?? []}
           dataConfidence={storyJson?.dataConfidence ?? null}
-          question={storyJson?.question ?? null}
+          question={questions[0] ?? null}
           rowCount={storyJson?.rowCount ?? null}
           columnCount={storyJson?.columnCount ?? null}
         />

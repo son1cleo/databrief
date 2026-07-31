@@ -1,4 +1,5 @@
 import "server-only";
+import type { QuestionPlanEntry, AnalysisTool } from "./llm/schemas";
 
 const CORRELATION_THRESHOLD = 0.5;
 const SKEW_THRESHOLD = 1.0;
@@ -14,13 +15,24 @@ export interface Finding {
   magnitude: number; // 0-1, how large/impactful the effect is
   confidence: number; // 0-1, how statistically trustworthy the finding is
   extra: Record<string, unknown>;
+  /** 0-based indices into the report's questions[] array this finding helps
+   * answer. Empty = baseline/dataset-wide, not tied to any specific question
+   * (e.g. data_quality, or any finding produced outside a question plan). */
+  questionIndices: number[];
 }
 
-function makeFinding(f: Omit<Finding, "magnitude" | "confidence"> & { magnitude: number; confidence: number }): Finding {
+function makeFinding(
+  f: Omit<Finding, "magnitude" | "confidence" | "questionIndices"> & {
+    magnitude: number;
+    confidence: number;
+    questionIndices?: number[];
+  }
+): Finding {
   return {
     ...f,
     magnitude: Math.min(Math.max(round3(f.magnitude), 0), 1),
     confidence: Math.min(Math.max(round3(f.confidence), 0), 1),
+    questionIndices: f.questionIndices ?? [],
   };
 }
 
@@ -180,6 +192,77 @@ export function findPreColumn(columns: string[], postCol: string): string | null
     }
   }
   return null;
+}
+
+export interface ColumnSummary {
+  name: string;
+  kind: "numeric" | "datetime" | "categorical";
+  missingPct: number;
+  mean?: number;
+  std?: number;
+  min?: number;
+  max?: number;
+  minDate?: string;
+  maxDate?: string;
+  distinctCount?: number;
+  topValue?: string;
+}
+
+/** Lightweight per-column profile (dtype, missing%, and dtype-appropriate
+ * stats) used both by the Dataset Insights page and by the question planner
+ * (lib/llm/planner.ts) as LLM context -- one profiler, two consumers. */
+export function buildColumnSummaries(rows: Row[], columns: string[]): ColumnSummary[] {
+  const numericSet = new Set(numericColumns(rows, columns));
+  const dateSet = new Set(datetimeColumns(rows, columns, [...numericSet]));
+
+  return columns.map((name) => {
+    const values = rows.map((r) => r[name]);
+    const missingCount = values.filter(isMissing).length;
+    const missingPct = rows.length ? missingCount / rows.length : 0;
+
+    if (numericSet.has(name)) {
+      const nums = values.filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
+      return {
+        name,
+        kind: "numeric" as const,
+        missingPct,
+        mean: nums.length ? mean(nums) : undefined,
+        std: nums.length > 1 ? sampleStd(nums) : undefined,
+        min: nums.length ? Math.min(...nums) : undefined,
+        max: nums.length ? Math.max(...nums) : undefined,
+      };
+    }
+
+    if (dateSet.has(name)) {
+      const times = values
+        .filter((v) => !isMissing(v))
+        .map((v) => Date.parse(String(v)))
+        .filter((t) => !Number.isNaN(t));
+      return {
+        name,
+        kind: "datetime" as const,
+        missingPct,
+        minDate: times.length ? new Date(Math.min(...times)).toISOString().slice(0, 10) : undefined,
+        maxDate: times.length ? new Date(Math.max(...times)).toISOString().slice(0, 10) : undefined,
+      };
+    }
+
+    const counts = new Map<string, number>();
+    for (const v of values) {
+      if (isMissing(v)) continue;
+      const key = String(v);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    let topValue: string | undefined;
+    let topCount = 0;
+    for (const [value, count] of counts) {
+      if (count > topCount) {
+        topValue = value;
+        topCount = count;
+      }
+    }
+    return { name, kind: "categorical" as const, missingPct, distinctCount: counts.size, topValue };
+  });
 }
 
 function numericValues(rows: Row[], col: string): number[] {
@@ -785,6 +868,16 @@ function fmt(n: number, decimals = 2): string {
 // ---------------------------------------------------------------------------
 
 export interface AnalyzeOptions {
+  /** Primary path: a per-question plan from lib/llm/planner.ts (or its
+   * buildHeuristicPlan fallback), produced BEFORE analyze() runs. When
+   * present, only the tools each entry lists are run, scoped to that
+   * entry's relevant_cols, and every resulting finding is tagged with the
+   * entry's questionIndices. Takes priority over the legacy fields below. */
+  plan?: QuestionPlanEntry[] | null;
+  // Legacy fields -- used only when `plan` is absent. This is also the exact
+  // call shape lib/datasetAnalysis.ts's buildDatasetInsights() uses
+  // (analyze(rows, columns) with zero options, for the separate Dataset
+  // Insights page), so this branch must stay behaviorally unchanged.
   question?: string | null;
   relevantCols?: string[] | null;
   questionType?: string | null;
@@ -794,10 +887,15 @@ export interface AnalyzeOptions {
 
 /** Runs the full stats engine over parsed rows and returns every candidate Finding. */
 export function analyze(rows: Row[], columns: string[], options: AnalyzeOptions = {}): Finding[] {
-  const { question = null, questionType = null, independentVar = null, dependentVar = null } = options;
   const numericCols = numericColumns(rows, columns);
   const dateCols = datetimeColumns(rows, columns, numericCols);
   const labelCol = labelColumn(columns, numericCols);
+
+  if (options.plan && options.plan.length > 0) {
+    return analyzeWithPlan(rows, columns, options.plan, numericCols, dateCols, labelCol);
+  }
+
+  const { question = null, questionType = null, independentVar = null, dependentVar = null } = options;
   const relevantCols = options.relevantCols ?? questionRelevantColumns(columns, question);
 
   let findings: Finding[] = [];
@@ -820,4 +918,94 @@ export function analyze(rows: Row[], columns: string[], options: AnalyzeOptions 
   findings.push(dataQualityFinding(rows, columns));
 
   return findings;
+}
+
+/** Plan-driven orchestration: runs only the tools each plan entry selected,
+ * scoped to that entry's relevant_cols, and tags every finding with the
+ * question index/indices it was generated to help answer. The same finding
+ * (by type + column set) requested by two entries is merged, not duplicated,
+ * so a correlation useful to both question 0 and question 2 is tagged
+ * [0, 2] rather than appearing twice. */
+function analyzeWithPlan(
+  rows: Row[],
+  columns: string[],
+  plan: QuestionPlanEntry[],
+  numericCols: string[],
+  dateCols: string[],
+  labelCol: string | null
+): Finding[] {
+  const byKey = new Map<string, Finding>();
+  const findings: Finding[] = [];
+
+  function addFinding(f: Finding, questionIndices: number[]) {
+    const key = `${f.type}::${[...f.columns].sort().join(",")}`;
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.questionIndices = Array.from(new Set([...existing.questionIndices, ...questionIndices]));
+      return;
+    }
+    const tagged: Finding = { ...f, questionIndices };
+    byKey.set(key, tagged);
+    findings.push(tagged);
+  }
+
+  for (const entry of plan) {
+    if (!entry.answerable) continue;
+    const relevantCols = entry.relevant_cols;
+    const scopedNumeric = relevantCols.length > 0 ? numericCols.filter((c) => relevantCols.includes(c)) : numericCols;
+
+    if (entry.tools.includes("ranking")) {
+      rankingFindings(rows, columns, null, relevantCols, numericCols, true).forEach((f) => addFinding(f, entry.questionIndices));
+    }
+    if (entry.tools.includes("dose_response")) {
+      doseResponseFindings(rows, null, relevantCols, numericCols, entry.independent_var, entry.dependent_var).forEach((f) =>
+        addFinding(f, entry.questionIndices)
+      );
+    }
+    if (entry.tools.includes("comparison")) {
+      comparisonFindings(rows, relevantCols, numericCols).forEach((f) => addFinding(f, entry.questionIndices));
+    }
+    if (entry.tools.includes("descriptive")) {
+      descriptiveFindings(rows, scopedNumeric).forEach((f) => addFinding(f, entry.questionIndices));
+    }
+    if (entry.tools.includes("trend")) {
+      trendFindings(rows, scopedNumeric, dateCols).forEach((f) => addFinding(f, entry.questionIndices));
+    }
+    if (entry.tools.includes("outlier")) {
+      outlierFindings(rows, scopedNumeric, labelCol).forEach((f) => addFinding(f, entry.questionIndices));
+    }
+    if (entry.tools.includes("correlation")) {
+      correlationFindings(rows, scopedNumeric).forEach((f) => addFinding(f, entry.questionIndices));
+    }
+    if (entry.tools.includes("distribution")) {
+      distributionFindings(rows, scopedNumeric).forEach((f) => addFinding(f, entry.questionIndices));
+    }
+  }
+
+  addFinding(dataQualityFinding(rows, columns), []);
+  return findings;
+}
+
+/** LLM-free fallback for planQuestions() (lib/llm/planner.ts) when every
+ * provider fails -- one plan entry per question (no clustering, since
+ * clustering needs LLM judgment), reusing the same keyword heuristics the
+ * pre-redesign pipeline used to gate ranking/dose_response/comparison. */
+export function buildHeuristicPlan(questions: string[], columns: string[], numericCols: string[]): QuestionPlanEntry[] {
+  return questions.map((question, i) => {
+    const relevantCols = questionRelevantColumns(columns, question);
+    const tools: AnalysisTool[] = ["descriptive", "trend", "outlier", "correlation", "distribution"];
+    if (isRankingQuestion(question)) tools.push("ranking");
+    if (isDoseResponseQuestion(question)) tools.push("dose_response");
+    if (isComparisonQuestion(question)) tools.push("comparison");
+    return {
+      questionIndices: [i],
+      answerable: true,
+      unanswerableReason: null,
+      relevant_cols: relevantCols.length > 0 ? relevantCols : numericCols.slice(0, 6),
+      independent_var: null,
+      dependent_var: null,
+      tools,
+      depth: "standard",
+    };
+  });
 }

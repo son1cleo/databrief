@@ -12,13 +12,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing upload_id" }, { status: 400 });
   }
 
+  // Accepts the current `questions: string[]` shape, plus the legacy
+  // singular `question: string` for one deprecation window (this is a
+  // public route that may have external callers built against the old
+  // single-question contract).
+  const questions = Array.isArray(body?.questions)
+    ? body.questions.filter((q: unknown): q is string => typeof q === "string")
+    : typeof body?.question === "string" && body.question
+      ? [body.question]
+      : undefined;
+
   const result = await createReportForUser(user, {
     uploadId,
     formats: Array.isArray(body?.formats) ? body.formats : undefined,
     pptxTheme: typeof body?.pptx_theme === "string" ? body.pptx_theme : undefined,
     applyBrandKit: Boolean(body?.apply_brand_kit),
     industry: typeof body?.industry === "string" ? body.industry : undefined,
-    question: typeof body?.question === "string" ? body.question : undefined,
+    questions,
   });
 
   if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status });

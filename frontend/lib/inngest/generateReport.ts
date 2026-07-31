@@ -18,7 +18,7 @@ const STRUCTURED_TYPES = new Set(["structured", "semi_structured"]);
 export const generateReport = inngest.createFunction(
   { id: "generate-report", retries: 2, triggers: { event: GENERATE_REPORT_EVENT } },
   async ({ event, step }) => {
-    const { reportId, industry, question, formats } = event.data as GenerateReportEventData;
+    const { reportId, industry, questions, formats } = event.data as GenerateReportEventData;
 
     try {
       const { report, upload, user } = await step.run(
@@ -42,9 +42,9 @@ export const generateReport = inngest.createFunction(
       const { storyArc, findingsCount, narration } = await step.run(
         "generate-story",
         isStructured
-          ? () => generateStructuredStory(reportId, upload, question, industry, user.preferredLlmProvider)
+          ? () => generateStructuredStory(reportId, upload, questions, industry, user.preferredLlmProvider)
           : () =>
-              generateTextStory(reportId, upload, question, industry, user.preferredLlmProvider).then((r) => ({
+              generateTextStory(reportId, upload, questions, industry, user.preferredLlmProvider).then((r) => ({
                 ...r,
                 findingsCount: 0,
               }))

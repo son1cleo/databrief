@@ -23,7 +23,7 @@ export interface StepConfig {
   pptxTheme: string;
   applyBrandKit: boolean;
   industry: string;
-  question: string;
+  questions: string[];
 }
 
 interface Step3ConfigureProps {
@@ -54,7 +54,12 @@ export function Step3Configure({
 
   const handleContinue = () => {
     const formats = ["pdf", ...(includeWord ? ["word"] : []), ...(includePptx ? ["pptx"] : [])];
-    onContinue({ formats, pptxTheme, applyBrandKit, industry, question });
+    const questions = question
+      .split("\n")
+      .map((q) => q.trim())
+      .filter(Boolean)
+      .slice(0, 5);
+    onContinue({ formats, pptxTheme, applyBrandKit, industry, questions });
   };
 
   const body = (
@@ -152,13 +157,13 @@ export function Step3Configure({
         <div>
           <Label className="mb-2 flex items-center gap-2 text-sm font-medium">
             <MessageCircleQuestionMark className="size-4 text-muted-foreground" />
-            What question are you trying to answer?
-            <span className="font-normal text-muted-foreground">(optional)</span>
+            What questions are you trying to answer?
+            <span className="font-normal text-muted-foreground">(optional, one per line, up to 5)</span>
           </Label>
           <Textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="e.g. Why did churn spike in Q3?"
+            placeholder={"e.g. Why did churn spike in Q3?\nWhich region is most at risk?"}
             rows={3}
           />
         </div>

@@ -2,12 +2,13 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { downloadBytes, uploadBytes } from "@/lib/storage";
 import { parseTabular, parseText, type TabularData } from "@/lib/fileParsing";
-import { analyze, findPreColumn, type Row } from "@/lib/analysis";
+import { analyze, findPreColumn, buildColumnSummaries, type Row } from "@/lib/analysis";
 import { rankFindings } from "@/lib/insight";
 import { chartForFinding, chartDataForFinding } from "@/lib/charts";
 import { buildStoryArc, buildTextStoryArc, type StoryArc } from "@/lib/story";
-import { identifyRelevantColumns, generateStoryBlocks } from "@/lib/llm";
-import type { ColumnClassification, StoryNarrationResult } from "@/lib/llm/schemas";
+import { generateStoryBlocks } from "@/lib/llm";
+import { generateAutoQuestions, generateAutoQuestionsFromText, planQuestions } from "@/lib/llm/planner";
+import { MAX_QUESTIONS, type QuestionPlanEntry, type StoryNarrationResult } from "@/lib/llm/schemas";
 import { renderReportPdf } from "@/lib/exports/pdf";
 import { buildWordDocument } from "@/lib/exports/word";
 import { buildPptx } from "@/lib/exports/pptx";
@@ -66,37 +67,15 @@ export async function parseUploadText(upload: UploadFileRef): Promise<string> {
   return parseText(bytes, upload.fileType ?? "txt");
 }
 
-export async function classifyQuestion(
-  question: string,
-  columns: string[],
-  rows: Row[],
-  preferredProvider?: string | null
-): Promise<ColumnClassification> {
-  const sampleValues = Object.fromEntries(
-    columns.map((col) => [
-      col,
-      rows
-        .slice(0, 5)
-        .map((r) => r[col])
-        .filter((v) => v !== null && v !== undefined),
-    ])
-  );
-  return identifyRelevantColumns(question, columns, sampleValues, preferredProvider);
-}
-
 const POST_PREFIXES = ["post_", "_post", "after_"];
 const IMPROVE_WORDS = ["better", "worse", "improve", "change", "help", "hurt", "impact", "affect"];
 
 /** Auto-computes change_X columns for detected pre/post pairs so they're
- * first-class columns for the stats engine, mirroring analysis_worker.py's
- * orchestration (this logic lives in the Celery task, not analysis_service.py
- * itself, so it isn't part of analyze()). */
-export function addChangeColumns(
-  rows: Row[],
-  columns: string[],
-  question: string | null,
-  relevantCols: string[]
-): { rows: Row[]; columns: string[]; relevantCols: string[] } {
+ * first-class columns for the stats engine. Always runs unconditionally
+ * (cheap, deterministic) -- whether a change column actually matters to a
+ * given question is decided separately in analyzeAndBuildStoryArc, once the
+ * question plan exists, rather than gating the computation itself. */
+export function addChangeColumns(rows: Row[], columns: string[]): { rows: Row[]; columns: string[]; changeColsAdded: string[] } {
   const changeColsAdded: string[] = [];
   let nextRows = rows;
   const nextColumns = [...columns];
@@ -120,15 +99,7 @@ export function addChangeColumns(
     }
   }
 
-  let nextRelevantCols = relevantCols;
-  if (changeColsAdded.length > 0 && question) {
-    const q = question.toLowerCase();
-    if (IMPROVE_WORDS.some((w) => q.includes(w))) {
-      nextRelevantCols = [...relevantCols, ...changeColsAdded];
-    }
-  }
-
-  return { rows: nextRows, columns: nextColumns, relevantCols: nextRelevantCols };
+  return { rows: nextRows, columns: nextColumns, changeColsAdded };
 }
 
 // Upper bound on findings handed to the LLM for climax selection/narration.
@@ -141,31 +112,37 @@ const MAX_FINDINGS_FOR_NARRATION = 40;
 export function analyzeAndBuildStoryArc(
   rows: Row[],
   columns: string[],
-  question: string | null,
-  columnMeta: ColumnClassification | null
+  questions: string[],
+  plan: QuestionPlanEntry[] | null
 ): { storyArc: StoryArc; findingsCount: number; rows: Row[] } {
-  const { rows: finalRows, columns: finalColumns, relevantCols } = addChangeColumns(
-    rows,
-    columns,
-    question,
-    columnMeta?.relevant_cols ?? []
-  );
+  const { rows: changedRows, columns: changedColumns, changeColsAdded } = addChangeColumns(rows, columns);
 
-  const findings = analyze(finalRows, finalColumns, {
-    question,
-    relevantCols,
-    questionType: columnMeta?.question_type ?? null,
-    independentVar: columnMeta?.independent_var ?? null,
-    dependentVar: columnMeta?.dependent_var ?? null,
-  });
+  // v1: global union -- if ANY question implies "did this get better/worse",
+  // every plan entry gets the change_ columns appended to its relevant_cols.
+  // A more precise per-entry version (only the entry whose dependent_var
+  // matches) is a refinement to make only if narration misplacement is
+  // actually observed in practice.
+  const questionsText = questions.join(" ").toLowerCase();
+  const shouldAddChangeCols = changeColsAdded.length > 0 && IMPROVE_WORDS.some((w) => questionsText.includes(w));
+  const finalPlan: QuestionPlanEntry[] | null =
+    plan && shouldAddChangeCols
+      ? plan.map((entry) => ({ ...entry, relevant_cols: [...entry.relevant_cols, ...changeColsAdded] }))
+      : plan;
+
+  // No plan (planning never ran -- zero questions and auto-gen also came up
+  // empty) falls to analyze()'s own legacy no-plan branch, the exact call
+  // shape lib/datasetAnalysis.ts already uses -- must stay behaviorally
+  // identical to the pre-redesign pipeline.
+  const findings = finalPlan ? analyze(changedRows, changedColumns, { plan: finalPlan }) : analyze(changedRows, changedColumns);
+
   // Every finding up to MAX_FINDINGS_FOR_NARRATION goes to the story arc (and
   // the LLM) so it can pick the best narrative climax itself, not just the
   // highest insight.ts score -- charts are rendered lazily in narrate() only
   // for whichever findings end up referenced, so this doesn't mean rendering
   // a chart per finding here.
-  const ranked = rankFindings(findings, MAX_FINDINGS_FOR_NARRATION, relevantCols);
-  const storyArc = buildStoryArc(ranked, finalRows.length, finalColumns.length, finalColumns, question);
-  return { storyArc, findingsCount: ranked.length, rows: finalRows };
+  const ranked = rankFindings(findings, { topN: MAX_FINDINGS_FOR_NARRATION, questionCount: questions.length });
+  const storyArc = buildStoryArc(ranked, changedRows.length, changedColumns.length, changedColumns, questions, finalPlan);
+  return { storyArc, findingsCount: ranked.length, rows: changedRows };
 }
 
 /** Narrates the story arc and folds the LLM's climax choice (and its
@@ -177,11 +154,10 @@ export function analyzeAndBuildStoryArc(
 export async function narrate(
   storyArc: StoryArc,
   industry: string | null,
-  question: string | null,
   rows: Row[] | null,
   preferredProvider?: string | null
 ): Promise<{ storyArc: StoryArc; narration: StoryNarrationResult }> {
-  const result = await generateStoryBlocks(storyArc, industry, question, preferredProvider);
+  const result = await generateStoryBlocks(storyArc, industry, preferredProvider);
 
   const updatedArc: StoryArc = {
     ...storyArc,
@@ -220,8 +196,8 @@ export interface GeneratedStory {
   narration: StoryNarrationResult;
 }
 
-/** Parses, classifies, analyzes, and narrates a structured upload, all in
- * one call. This MUST stay a single Inngest step (not split across several
+/** Parses, plans, analyzes, and narrates a structured upload, all in one
+ * call. This MUST stay a single Inngest step (not split across several
  * step.run calls) -- Inngest checkpoints every step's return value as
  * durable run state, and the raw parsed rows (parsed.rows / built.rows) can
  * easily be many MB for a real dataset, which blows past Inngest's run state
@@ -232,29 +208,46 @@ export interface GeneratedStory {
  * (re-parse + re-analyze), not just narration, since there's no
  * checkpoint between the sub-phases anymore. Sub-phases are still
  * individually timed via withTiming for visibility, just not as separate
- * durable Inngest steps. */
+ * durable Inngest steps.
+ *
+ * When the user supplied no questions, auto-generates a small set before
+ * planning -- the report always ends up structured around answering
+ * something concrete, never a generic dataset-wide dump. */
 export async function generateStructuredStory(
   reportId: string,
   upload: UploadFileRef,
-  question: string | null,
+  questions: string[],
   industry: string | null,
   preferredProvider?: string | null
 ): Promise<GeneratedStory> {
   const parsed = await withTiming(reportId, "parse-upload", () => parseUploadTabular(upload))();
 
-  const columnMeta = question
-    ? await withTiming(reportId, "classify-question", () =>
-        classifyQuestion(question, parsed.columns, parsed.rows, preferredProvider)
-      )()
-    : null;
+  const rawQuestions = questions.slice(0, MAX_QUESTIONS);
+  const finalQuestions =
+    rawQuestions.length > 0
+      ? rawQuestions
+      : await withTiming(reportId, "auto-questions", () =>
+          generateAutoQuestions(
+            parsed.columns,
+            buildColumnSummaries(parsed.rows, parsed.columns),
+            parsed.rows.slice(0, 5),
+            industry,
+            preferredProvider
+          )
+        )();
+
+  const plan =
+    finalQuestions.length > 0
+      ? await withTiming(reportId, "plan-questions", () =>
+          planQuestions(finalQuestions, parsed.columns, buildColumnSummaries(parsed.rows, parsed.columns), preferredProvider)
+        )()
+      : null;
 
   const built = await withTiming(reportId, "analyze-and-chart", () =>
-    analyzeAndBuildStoryArc(parsed.rows, parsed.columns, question, columnMeta)
+    analyzeAndBuildStoryArc(parsed.rows, parsed.columns, finalQuestions, plan)
   )();
 
-  const narrated = await withTiming(reportId, "narrate", () =>
-    narrate(built.storyArc, industry, question, built.rows, preferredProvider)
-  )();
+  const narrated = await withTiming(reportId, "narrate", () => narrate(built.storyArc, industry, built.rows, preferredProvider))();
 
   return {
     storyArc: narrated.storyArc,
@@ -265,17 +258,27 @@ export async function generateStructuredStory(
 
 /** Same reasoning as generateStructuredStory -- kept as one step so no large
  * intermediate value (here, the raw document text) is ever returned from a
- * step.run call. */
+ * step.run call. No deterministic-tool plan exists for raw text (there's no
+ * Finding[] to plan against), so this only auto-generates questions when
+ * none were supplied -- narrationAgent.ts still gives each one its own
+ * chapter. */
 export async function generateTextStory(
   reportId: string,
   upload: UploadFileRef,
-  question: string | null,
+  questions: string[],
   industry: string | null,
   preferredProvider?: string | null
 ): Promise<Omit<GeneratedStory, "findingsCount">> {
   const text = await withTiming(reportId, "parse-upload", () => parseUploadText(upload))();
-  const storyArc = await withTiming(reportId, "build-text-story-arc", () => buildTextStoryArc(text, question))();
-  const narrated = await withTiming(reportId, "narrate", () => narrate(storyArc, industry, question, null, preferredProvider))();
+
+  const rawQuestions = questions.slice(0, MAX_QUESTIONS);
+  const finalQuestions =
+    rawQuestions.length > 0
+      ? rawQuestions
+      : await withTiming(reportId, "auto-questions", () => generateAutoQuestionsFromText(text, industry, preferredProvider))();
+
+  const storyArc = await withTiming(reportId, "build-text-story-arc", () => buildTextStoryArc(text, finalQuestions))();
+  const narrated = await withTiming(reportId, "narrate", () => narrate(storyArc, industry, null, preferredProvider))();
   return { storyArc: narrated.storyArc, narration: narrated.narration };
 }
 
@@ -300,7 +303,7 @@ export async function buildAndUploadPdf(
     title,
     datasetLabel: buildDatasetLabel(filename, storyArc.rowCount, storyArc.columnCount),
     dataConfidence: storyArc.dataConfidence,
-    question: storyArc.question,
+    question: storyArc.questions[0] ?? null,
   };
   const buffer = await renderReportPdf({ metadata, narration, findings: storyArc.findings, brand });
   const objectKey = `reports/${reportId}/report.pdf`;
@@ -320,7 +323,7 @@ export async function buildAndUploadWord(
     title,
     datasetLabel: buildDatasetLabel(filename, storyArc.rowCount, storyArc.columnCount),
     dataConfidence: storyArc.dataConfidence,
-    question: storyArc.question,
+    question: storyArc.questions[0] ?? null,
   };
   const buffer = await buildWordDocument({ metadata, narration, findings: storyArc.findings, brand });
   const objectKey = `reports/${reportId}/report.docx`;
@@ -340,7 +343,7 @@ export async function buildAndUploadPptx(
     title: deriveTitle(narration.headline),
     datasetLabel: buildDatasetLabel(filename, storyArc.rowCount, storyArc.columnCount),
     dataConfidence: storyArc.dataConfidence,
-    question: storyArc.question,
+    question: storyArc.questions[0] ?? null,
   };
   const buffer = await buildPptx({ metadata, narration, storyArc, theme, brand });
   const objectKey = `reports/${reportId}/report.pptx`;

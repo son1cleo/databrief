@@ -22,16 +22,16 @@ const STRUCTURED_TYPES = new Set(["structured", "semi_structured"]);
  * with no automatic per-step retry and no durability across a function
  * timeout — those are exactly what Inngest buys you over this path. */
 export async function runGenerateReportPipelineDirect(data: GenerateReportEventData): Promise<void> {
-  const { reportId, industry, question, formats } = data;
+  const { reportId, industry, questions, formats } = data;
 
   try {
     const { report, upload, user } = await withTiming(reportId, "load-metadata", () => loadReportMetadata(reportId))();
     const isStructured = STRUCTURED_TYPES.has(upload.dataType ?? "");
 
     const { storyArc, findingsCount, narration } = isStructured
-      ? await generateStructuredStory(reportId, upload, question, industry, user.preferredLlmProvider)
+      ? await generateStructuredStory(reportId, upload, questions, industry, user.preferredLlmProvider)
       : {
-          ...(await generateTextStory(reportId, upload, question, industry, user.preferredLlmProvider)),
+          ...(await generateTextStory(reportId, upload, questions, industry, user.preferredLlmProvider)),
           findingsCount: 0,
         };
 
